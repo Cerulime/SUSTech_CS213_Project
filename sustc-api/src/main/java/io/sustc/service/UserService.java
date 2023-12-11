@@ -3,6 +3,7 @@ package io.sustc.service;
 import io.sustc.dto.AuthInfo;
 import io.sustc.dto.RegisterUserReq;
 import io.sustc.dto.UserInfoResp;
+import org.springframework.security.crypto.argon2.Argon2PasswordEncoder;
 
 public interface UserService {
 
@@ -46,20 +47,15 @@ public interface UserService {
     boolean deleteAccount(AuthInfo auth, long mid);
 
     /**
-     * Follow the user with {@code mid}.
-     * If that user has already been followed, unfollow the user.
+     * Encodes a password using Argon2. Result's length is {@link DatabaseService#MAX_PASSWORD_LENGTH}.
      *
-     * @param auth        the authentication information of the follower
-     * @param followeeMid the user who will be followed
-     * @return the follow state after this operation
-     * @apiNote You may consider the following corner cases:
-     * <ul>
-     *   <li>{@code auth} is invalid, as stated in {@link io.sustc.service.UserService#deleteAccount(AuthInfo, long)}</li>
-     *   <li>cannot find a user corresponding to the {@code followeeMid}</li>
-     * </ul>
-     * If any of the corner case happened, {@code false} shall be returned.
+     * @param password the password to be encoded
+     * @return the encoded password
      */
-    boolean follow(AuthInfo auth, long followeeMid);
+    static String encodePassword(String password) {
+        Argon2PasswordEncoder passwordEncoder = new Argon2PasswordEncoder(16, 32, 2, 8192, 3);
+        return passwordEncoder.encode(password);
+    }
 
     /**
      * Gets the required information (in DTO) of a user.
@@ -73,4 +69,22 @@ public interface UserService {
      * If any of the corner case happened, {@code null} shall be returned.
      */
     UserInfoResp getUserInfo(long mid);
+
+    /**
+     * Follow the user with {@code mid}.
+     * If that user has already been followed, unfollow the user.
+     *
+     * @param auth        the authentication information of the follower
+     * @param followeeMid the user who will be followed
+     * @return the follow state after this operation
+     * @apiNote You may consider the following corner cases:
+     * <ul>
+     *   <li>{@code auth} is invalid, as stated in {@link UserService#deleteAccount(AuthInfo, long)}</li>
+     *   <li>cannot find a user corresponding to the {@code followeeMid}</li>
+     * </ul>
+     * If any of the corner case happened, {@code false} shall be returned.
+     */
+    boolean follow(AuthInfo auth, long followeeMid);
+
+    boolean invalidAuthInfo(AuthInfo auth);
 }

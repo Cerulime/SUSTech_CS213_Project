@@ -2,11 +2,9 @@ package io.sustc.service.impl;
 
 import com.google.common.base.Joiner;
 import com.google.common.io.CharSource;
-import io.sustc.dto.AuthInfo;
-import io.sustc.dto.DanmuRecord;
-import io.sustc.dto.UserRecord;
-import io.sustc.dto.VideoRecord;
+import io.sustc.dto.*;
 import io.sustc.service.DatabaseService;
+import io.sustc.service.UserService;
 import lombok.extern.slf4j.Slf4j;
 import org.postgresql.copy.CopyManager;
 import org.postgresql.core.BaseConnection;
@@ -14,6 +12,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.scheduling.annotation.Async;
+import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,18 +22,19 @@ import java.io.IOException;
 import java.sql.Timestamp;
 import java.util.Date;
 import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 
 @Service
+@EnableAsync
 @Slf4j
 public class DatabaseServiceImpl implements DatabaseService {
 
     private final JdbcTemplate jdbcTemplate;
-    private final UserAuthService userAuthService;
 
     @Autowired
     public DatabaseServiceImpl(DataSource dataSource) {
         this.jdbcTemplate = new JdbcTemplate(dataSource);
-        this.userAuthService = new UserAuthService(this);
     }
 
     @Override
@@ -45,19 +46,22 @@ public class DatabaseServiceImpl implements DatabaseService {
     public void initUserAuthTable(List<UserRecord> userRecords) {
         String createUserAuthTable = """
                 CREATE TABLE IF NOT EXISTS UserAuth (
-                    mid BIGINT,
-                    password CHAR(96),
-                    qq VARCHAR(10),
-                    wechat VARCHAR(25)
+                    mid BIGSERIAL,
+                    password CHAR(${MAX_PASSWORD_LENGTH}),
+                    qq VARCHAR(${MAX_QQ_LENGTH}),
+                    wechat VARCHAR(${MAX_WECHAT_LENGTH})
                 );
-                """;
+                """
+                .replace("${MAX_PASSWORD_LENGTH}", String.valueOf(MAX_PASSWORD_LENGTH))
+                .replace("${MAX_QQ_LENGTH}", String.valueOf(MAX_QQ_LENGTH))
+                .replace("${MAX_WECHAT_LENGTH}", String.valueOf(MAX_WECHAT_LENGTH));
         jdbcTemplate.execute(createUserAuthTable);
         Joiner joiner = Joiner.on('\t').useForNull("");
         StringBuilder copyData = new StringBuilder();
         for (UserRecord user : userRecords) {
             joiner.appendTo(copyData,
                     user.getMid(),
-                    userAuthService.encodePassword(user.getPassword()),
+                    UserService.encodePassword(user.getPassword()),
                     user.getQq(),
                     user.getWechat()
             );
@@ -66,10 +70,15 @@ public class DatabaseServiceImpl implements DatabaseService {
         String copySql = "COPY UserAuth(mid, password, qq, wechat) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t', NULL '')";
         copyInsertion(CharSource.wrap(copyData), copySql);
         String createUserAuthTableConstraint = """
+                SELECT setval(pg_get_serial_sequence('UserAuth', 'mid'), (SELECT MAX(mid) FROM UserAuth));
                 ALTER TABLE UserAuth
                 ALTER COLUMN password SET NOT NULL;
-                ALTER TABLE UserAuth
-                ADD PRIMARY KEY (mid);
+                ALTER TABLE UserAuth(
+                ADD PRIMARY KEY (mid),
+                ADD CONSTRAIN UniqueQq UNIQUE (qq),
+                ADD CONSTRAIN UniqueWechat UNIQUE (wechat)
+                );
+                CREATE INDEX UserAuthQqWechatIndex ON UserAuth USING bloom (qq, wechat);
                 """;
         jdbcTemplate.execute(createUserAuthTableConstraint);
     }
@@ -79,15 +88,17 @@ public class DatabaseServiceImpl implements DatabaseService {
         String createUserProfileTable = """
                 CREATE TABLE IF NOT EXISTS UserProfile(
                     mid BIGINT,
-                    name VARCHAR(20),
+                    name VARCHAR(${MAX_NAME_LENGTH}),
                     sex Gender,
                     birthday DATE,
                     level SMALLINT,
                     coin INTEGER,
-                    sign VARCHAR(50),
+                    sign VARCHAR(${MAX_SIGN_LENGTH}),
                     identity Identity
                 );
-                """;
+                """
+                .replace("${MAX_NAME_LENGTH}", String.valueOf(MAX_NAME_LENGTH))
+                .replace("${MAX_SIGN_LENGTH}", String.valueOf(MAX_SIGN_LENGTH));
         jdbcTemplate.execute(createUserProfileTable);
         Joiner joiner = Joiner.on('\t').useForNull("");
         StringBuilder copyData = new StringBuilder();
@@ -117,7 +128,10 @@ public class DatabaseServiceImpl implements DatabaseService {
                 ALTER TABLE UserProfile(
                 ADD PRIMARY KEY (mid),
                 ADD FOREIGN KEY (mid) REFERENCES UserAuth(mid)
-                ON DELETE CASCADE);
+                ON DELETE CASCADE,
+                ADD CONSTRAINT UniqueName UNIQUE (name)
+                );
+                CREATE INDEX UserProfileNameIndex ON UserProfile USING HASH (name);
                 """;
         jdbcTemplate.execute(createUserProfileTableConstraint);
     }
@@ -178,17 +192,20 @@ public class DatabaseServiceImpl implements DatabaseService {
     public void initVideoTable(List<VideoRecord> videoRecords) {
         String createVideoTable = """
                 CREATE TABLE IF NOT EXISTS Video(
-                    bv CHAR(12),
-                    title VARCHAR(80),
+                    bv CHAR(${MAX_BV_LENGTH}),
+                    title VARCHAR(${MAX_TITLE_LENGTH}),
                     owner BIGINT,
                     commit_time TIMESTAMP,
                     review_time TIMESTAMP,
                     public_time TIMESTAMP,
                     duration FLOAT,
-                    description VARCHAR(2000),
+                    description VARCHAR(${MAX_DESCRIPTION_LENGTH}),
                     reviewer BIGINT
                 );
-                """;
+                """
+                .replace("${MAX_BV_LENGTH}", String.valueOf(MAX_BV_LENGTH))
+                .replace("${MAX_TITLE_LENGTH}", String.valueOf(MAX_TITLE_LENGTH))
+                .replace("${MAX_DESCRIPTION_LENGTH}", String.valueOf(MAX_DESCRIPTION_LENGTH));
         jdbcTemplate.execute(createVideoTable);
         String copySql = "COPY Video(bv, title, owner, commit_time, review_time, public_time, duration, description, reviewer) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t', NULL '')";
         Joiner joiner = Joiner.on('\t');
@@ -254,13 +271,14 @@ public class DatabaseServiceImpl implements DatabaseService {
         String createLikeVideoTable = """
                 CREATE TABLE IF NOT EXISTS LikeVideo(
                     mid BIGINT,
-                    bv CHAR(12)
+                    bv CHAR(${MAX_BV_LENGTH})
                 ) PARTITION BY HASH (mid);
                 CREATE TABLE LikeVideo_1 PARTITION OF LikeVideo FOR VALUES WITH (MODULUS 4, REMAINDER 0);
                 CREATE TABLE LikeVideo_2 PARTITION OF LikeVideo FOR VALUES WITH (MODULUS 4, REMAINDER 1);
                 CREATE TABLE LikeVideo_3 PARTITION OF LikeVideo FOR VALUES WITH (MODULUS 4, REMAINDER 2);
                 CREATE TABLE LikeVideo_4 PARTITION OF LikeVideo FOR VALUES WITH (MODULUS 4, REMAINDER 3);
-                """;
+                """
+                .replace("${MAX_BV_LENGTH}", String.valueOf(MAX_BV_LENGTH));
         jdbcTemplate.execute(createLikeVideoTable);
         String copySql = "COPY LikeVideo(mid, bv) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t')";
         Joiner joiner = Joiner.on('\t');
@@ -304,13 +322,14 @@ public class DatabaseServiceImpl implements DatabaseService {
         String createCoinVideoTable = """
                 CREATE TABLE IF NOT EXISTS CoinVideo(
                     mid BIGINT,
-                    bv CHAR(12)
+                    bv CHAR(${MAX_BV_LENGTH})
                 ) PARTITION BY HASH (mid);
                 CREATE TABLE CoinVideo_1 PARTITION OF CoinVideo FOR VALUES WITH (MODULUS 4, REMAINDER 0);
                 CREATE TABLE CoinVideo_2 PARTITION OF CoinVideo FOR VALUES WITH (MODULUS 4, REMAINDER 1);
                 CREATE TABLE CoinVideo_3 PARTITION OF CoinVideo FOR VALUES WITH (MODULUS 4, REMAINDER 2);
                 CREATE TABLE CoinVideo_4 PARTITION OF CoinVideo FOR VALUES WITH (MODULUS 4, REMAINDER 3);
-                """;
+                """
+                .replace("${MAX_BV_LENGTH}", String.valueOf(MAX_BV_LENGTH));
         jdbcTemplate.execute(createCoinVideoTable);
         Joiner joiner = Joiner.on('\t');
         String copySql = "COPY CoinVideo(mid, bv) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t')";
@@ -354,13 +373,14 @@ public class DatabaseServiceImpl implements DatabaseService {
         String createFavVideoTable = """
                 CREATE TABLE IF NOT EXISTS FavVideo(
                     mid BIGINT,
-                    bv CHAR(12)
+                    bv CHAR(${MAX_BV_LENGTH})
                 ) PARTITION BY HASH (mid);
                 CREATE TABLE FavVideo_1 PARTITION OF FavVideo FOR VALUES WITH (MODULUS 4, REMAINDER 0);
                 CREATE TABLE FavVideo_2 PARTITION OF FavVideo FOR VALUES WITH (MODULUS 4, REMAINDER 1);
                 CREATE TABLE FavVideo_3 PARTITION OF FavVideo FOR VALUES WITH (MODULUS 4, REMAINDER 2);
                 CREATE TABLE FavVideo_4 PARTITION OF FavVideo FOR VALUES WITH (MODULUS 4, REMAINDER 3);
-                """;
+                """
+                .replace("${MAX_BV_LENGTH}", String.valueOf(MAX_BV_LENGTH));
         jdbcTemplate.execute(createFavVideoTable);
         Joiner joiner = Joiner.on('\t');
         String copySql = "COPY FavVideo(mid, bv) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t')";
@@ -403,14 +423,15 @@ public class DatabaseServiceImpl implements DatabaseService {
         String createViewVideoTable = """
                 CREATE TABLE IF NOT EXISTS ViewVideo(
                     mid BIGINT,
-                    bv CHAR(12),
+                    bv CHAR(${MAX_BV_LENGTH}),
                     view_time FLOAT
                 ) PARTITION BY HASH (mid);
                 CREATE TABLE ViewVideo_1 PARTITION OF ViewVideo FOR VALUES WITH (MODULUS 4, REMAINDER 0);
                 CREATE TABLE ViewVideo_2 PARTITION OF ViewVideo FOR VALUES WITH (MODULUS 4, REMAINDER 1);
                 CREATE TABLE ViewVideo_3 PARTITION OF ViewVideo FOR VALUES WITH (MODULUS 4, REMAINDER 2);
                 CREATE TABLE ViewVideo_4 PARTITION OF ViewVideo FOR VALUES WITH (MODULUS 4, REMAINDER 3);
-                """;
+                """
+                .replace("${MAX_BV_LENGTH}", String.valueOf(MAX_BV_LENGTH));
         jdbcTemplate.execute(createViewVideoTable);
         Joiner joiner = Joiner.on('\t');
         String copySql = "COPY ViewVideo(mid, bv, view_time) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t')";
@@ -460,17 +481,19 @@ public class DatabaseServiceImpl implements DatabaseService {
         String createDanmuTable = """
                 CREATE TABLE IF NOT EXISTS Danmu(
                     id SERIAL,
-                    bv CHAR(12),
+                    bv CHAR(${MAX_BV_LENGTH}),
                     mid BIGINT,
                     dis_time FLOAT,
-                    content VARCHAR(100),
+                    content VARCHAR(${MAX_CONTENT_LENGTH}),
                     post_time TIMESTAMP
                 ) PARTITION BY HASH (id);
                 CREATE TABLE Danmu_1 PARTITION OF Danmu FOR VALUES WITH (MODULUS 4, REMAINDER 0);
                 CREATE TABLE Danmu_2 PARTITION OF Danmu FOR VALUES WITH (MODULUS 4, REMAINDER 1);
                 CREATE TABLE Danmu_3 PARTITION OF Danmu FOR VALUES WITH (MODULUS 4, REMAINDER 2);
                 CREATE TABLE Danmu_4 PARTITION OF Danmu FOR VALUES WITH (MODULUS 4, REMAINDER 3);
-                """;
+                """
+                .replace("${MAX_BV_LENGTH}", String.valueOf(MAX_BV_LENGTH))
+                .replace("${MAX_CONTENT_LENGTH}", String.valueOf(MAX_CONTENT_LENGTH));
         jdbcTemplate.execute(createDanmuTable);
         Joiner joiner = Joiner.on('\t');
         String copySql = "COPY Danmu(id, bv, mid, dis_time, content, post_time) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t')";
@@ -679,5 +702,215 @@ public class DatabaseServiceImpl implements DatabaseService {
         } catch (EmptyResultDataAccessException e) {
             return null;
         }
+    }
+
+    @Override
+    public AuthInfo getAuthInfoByQq(String qq) {
+        String sql = "SELECT mid, password, wechat FROM UserAuth WHERE qq = ?";
+        try {
+            return jdbcTemplate.queryForObject(sql, (rs, rowNum) -> AuthInfo.builder()
+                    .mid(rs.getLong("mid"))
+                    .password(rs.getString("password"))
+                    .qq(qq)
+                    .wechat(rs.getString("wechat"))
+                    .build(), qq);
+        } catch (EmptyResultDataAccessException e) {
+            return null;
+        }
+    }
+
+    @Override
+    public AuthInfo getAuthInfoByWechat(String wechat) {
+        String sql = "SELECT mid, password, qq FROM UserAuth WHERE wechat = ?";
+        try {
+            return jdbcTemplate.queryForObject(sql, (rs, rowNum) -> AuthInfo.builder()
+                    .mid(rs.getLong("mid"))
+                    .password(rs.getString("password"))
+                    .qq(rs.getString("qq"))
+                    .wechat(wechat)
+                    .build(), wechat);
+        } catch (EmptyResultDataAccessException e) {
+            return null;
+        }
+    }
+
+    @Override
+    public boolean isMidNotExist(long mid) {
+        String sql = "SELECT mid FROM UserAuth WHERE mid = ?";
+        try {
+            return jdbcTemplate.queryForObject(sql, Long.class, mid) == null;
+        } catch (EmptyResultDataAccessException e) {
+            return true;
+        }
+    }
+
+    @Override
+    public boolean isQQorWechatExist(String qq, String wechat) {
+        String sql = "SELECT mid FROM UserAuth WHERE qq = ? OR wechat = ?";
+        try {
+            return jdbcTemplate.queryForObject(sql, Long.class, qq, wechat) != null;
+        } catch (EmptyResultDataAccessException e) {
+            return false;
+        }
+    }
+
+    @Override
+    public boolean isNameExist(String name) {
+        String sql = "SELECT mid FROM UserProfile WHERE name = ?";
+        try {
+            return jdbcTemplate.queryForObject(sql, Long.class, name) != null;
+        } catch (EmptyResultDataAccessException e) {
+            return false;
+        }
+    }
+
+    @Override
+    @Transactional
+    public long insertUser(RegisterUserReq req) {
+        String sql = "INSERT INTO UserAuth(password, qq, wechat) VALUES (?, ?, ?) RETURNING mid";
+        Long mid = jdbcTemplate.queryForObject(sql, Long.class,
+                UserService.encodePassword(req.getPassword()),
+                req.getQq(),
+                req.getWechat());
+        if (mid == null)
+            return -1;
+        return mid;
+    }
+
+    @Override
+    public UserRecord.Identity getUserIdentity(long mid) {
+        String sql = "SELECT identity FROM UserProfile WHERE mid = ?";
+        try {
+            return jdbcTemplate.queryForObject(sql, UserRecord.Identity.class, mid);
+        } catch (EmptyResultDataAccessException e) {
+            return null;
+        }
+    }
+
+    @Override
+    @Transactional
+    public boolean deleteUser(long mid) {
+        String sql = "DELETE FROM UserAuth WHERE mid = ?";
+        return jdbcTemplate.update(sql, mid) > 0;
+    }
+
+    @Override
+    public boolean isFollowing(long followerMid, long followeeMid) {
+        String sql = "SELECT follower FROM UserFollow WHERE follower = ? AND followee = ?";
+        try {
+            return jdbcTemplate.queryForObject(sql, Long.class, followerMid, followeeMid) != null;
+        } catch (EmptyResultDataAccessException e) {
+            return false;
+        }
+    }
+
+    @Override
+    @Transactional
+    public boolean follow(long followerMid, long followeeMid) {
+        String sql = "INSERT INTO UserFollow(follower, followee) VALUES (?, ?)";
+        return jdbcTemplate.update(sql, followerMid, followeeMid) > 0;
+    }
+
+    @Override
+    @Transactional
+    public boolean unfollow(long followerMid, long followeeMid) {
+        String sql = "DELETE FROM UserFollow WHERE follower = ? AND followee = ?";
+        return jdbcTemplate.update(sql, followerMid, followeeMid) > 0;
+    }
+
+    @Override
+    public int getCoin(long mid) {
+        String sql = "SELECT coin FROM UserProfile WHERE mid = ?";
+        try {
+            return Optional.ofNullable(jdbcTemplate.queryForObject(sql, Integer.class, mid)).orElse(-1);
+        } catch (EmptyResultDataAccessException e) {
+            return -1;
+        }
+    }
+
+    @Async
+    @Override
+    public CompletableFuture<long[]> getFollowingAsync(long mid) {
+        return CompletableFuture.supplyAsync(() -> getFollowing(mid));
+    }
+
+    @Override
+    public long[] getFollowing(long mid) {
+        String sql = "SELECT followee FROM UserFollow WHERE follower = ?";
+        List<Long> followeeList = jdbcTemplate.queryForList(sql, Long.class, mid);
+        return followeeList.stream().mapToLong(Long::longValue).toArray();
+    }
+
+    @Async
+    @Override
+    public CompletableFuture<long[]> getFollowerAsync(long mid) {
+        return CompletableFuture.supplyAsync(() -> getFollower(mid));
+    }
+
+    @Override
+    public long[] getFollower(long mid) {
+        String sql = "SELECT follower FROM UserFollow WHERE followee = ?";
+        List<Long> followerList = jdbcTemplate.queryForList(sql, Long.class, mid);
+        return followerList.stream().mapToLong(Long::longValue).toArray();
+    }
+
+    @Async
+    @Override
+    public CompletableFuture<String[]> getWatchedAsync(long mid) {
+        return CompletableFuture.supplyAsync(() -> getWatched(mid));
+    }
+
+    @Override
+    public String[] getWatched(long mid) {
+        String sql = "SELECT bv FROM ViewVideo WHERE mid = ?";
+        List<String> bvList = jdbcTemplate.queryForList(sql, String.class, mid);
+        String[] bv = new String[bvList.size()];
+        bvList.toArray(bv);
+        return bv;
+    }
+
+    @Async
+    @Override
+    public CompletableFuture<String[]> getLikedAsync(long mid) {
+        return CompletableFuture.supplyAsync(() -> getLiked(mid));
+    }
+
+    @Override
+    public String[] getLiked(long mid) {
+        String sql = "SELECT bv FROM LikeVideo WHERE mid = ?";
+        List<String> bvList = jdbcTemplate.queryForList(sql, String.class, mid);
+        String[] bv = new String[bvList.size()];
+        bvList.toArray(bv);
+        return bv;
+    }
+
+    @Async
+    @Override
+    public CompletableFuture<String[]> getCollectedAsync(long mid) {
+        return CompletableFuture.supplyAsync(() -> getCollected(mid));
+    }
+
+    @Override
+    public String[] getCollected(long mid) {
+        String sql = "SELECT bv FROM FavVideo WHERE mid = ?";
+        List<String> bvList = jdbcTemplate.queryForList(sql, String.class, mid);
+        String[] bv = new String[bvList.size()];
+        bvList.toArray(bv);
+        return bv;
+    }
+
+    @Async
+    @Override
+    public CompletableFuture<String[]> getPostedAsync(long mid) {
+        return CompletableFuture.supplyAsync(() -> getPosted(mid));
+    }
+
+    @Override
+    public String[] getPosted(long mid) {
+        String sql = "SELECT bv FROM Video WHERE owner = ?";
+        List<String> bvList = jdbcTemplate.queryForList(sql, String.class, mid);
+        String[] bv = new String[bvList.size()];
+        bvList.toArray(bv);
+        return bv;
     }
 }
