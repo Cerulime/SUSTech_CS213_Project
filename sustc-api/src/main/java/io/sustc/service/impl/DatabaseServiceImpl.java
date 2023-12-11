@@ -1,23 +1,24 @@
 package io.sustc.service.impl;
 
+import com.google.common.base.Joiner;
+import com.google.common.io.CharSource;
 import io.sustc.dto.AuthInfo;
 import io.sustc.dto.DanmuRecord;
 import io.sustc.dto.UserRecord;
 import io.sustc.dto.VideoRecord;
 import io.sustc.service.DatabaseService;
 import lombok.extern.slf4j.Slf4j;
+import org.postgresql.copy.CopyManager;
+import org.postgresql.core.BaseConnection;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
-import org.postgresql.copy.CopyManager;
-import org.postgresql.core.BaseConnection;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.sql.DataSource;
 import java.io.IOException;
-import java.io.StringReader;
 import java.sql.Timestamp;
 import java.util.Date;
 import java.util.List;
@@ -51,19 +52,19 @@ public class DatabaseServiceImpl implements DatabaseService {
                 );
                 """;
         jdbcTemplate.execute(createUserAuthTable);
+        Joiner joiner = Joiner.on('\t').useForNull("");
         StringBuilder copyData = new StringBuilder();
         for (UserRecord user : userRecords) {
-            copyData.append(user.getMid())
-                    .append('\t')
-                    .append(userAuthService.encodePassword(user.getPassword()))
-                    .append('\t')
-                    .append(user.getQq() != null ? user.getQq() : "")
-                    .append('\t')
-                    .append(user.getWechat() != null ? user.getWechat() : "")
-                    .append('\n');
+            joiner.appendTo(copyData,
+                    user.getMid(),
+                    userAuthService.encodePassword(user.getPassword()),
+                    user.getQq(),
+                    user.getWechat()
+            );
+            copyData.append('\n');
         }
         String copySql = "COPY UserAuth(mid, password, qq, wechat) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t', NULL '')";
-        copyInsertion(copyData, copySql);
+        copyInsertion(CharSource.wrap(copyData), copySql);
         String createUserAuthTableConstraint = """
                 ALTER TABLE UserAuth
                 ALTER COLUMN password SET NOT NULL;
@@ -88,27 +89,22 @@ public class DatabaseServiceImpl implements DatabaseService {
                 );
                 """;
         jdbcTemplate.execute(createUserProfileTable);
+        Joiner joiner = Joiner.on('\t').useForNull("");
         StringBuilder copyData = new StringBuilder();
         for (UserRecord user : userRecords) {
-            copyData.append(user.getMid())
-                    .append('\t')
-                    .append(user.getName())
-                    .append('\t')
-                    .append(user.getSex())
-                    .append('\t')
-                    .append(user.getBirthday())
-                    .append('\t')
-                    .append(user.getLevel())
-                    .append('\t')
-                    .append(user.getCoin())
-                    .append('\t')
-                    .append(user.getSign() != null ? user.getSign() : "")
-                    .append('\t')
-                    .append(user.getIdentity())
-                    .append('\n');
+            joiner.appendTo(copyData,
+                    user.getMid(),
+                    user.getName(),
+                    user.getSex(),
+                    user.getBirthday(),
+                    user.getLevel(),
+                    user.getCoin(),
+                    user.getSign(),
+                    user.getIdentity());
+            copyData.append('\n');
         }
         String copySql = "COPY UserProfile(mid, name, sex, birthday, level, coin, sign, identity) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t', NULL '')";
-        copyInsertion(copyData, copySql);
+        copyInsertion(CharSource.wrap(copyData), copySql);
         String createUserProfileTableConstraint = """
                 ALTER TABLE UserProfile(
                 ALTER COLUMN name SET NOT NULL,
@@ -140,24 +136,26 @@ public class DatabaseServiceImpl implements DatabaseService {
                 """;
         jdbcTemplate.execute(createUserFollowTable);
         String copySql = "COPY UserFollow(follower, followee) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t')";
+        Joiner joiner = Joiner.on('\t');
         StringBuilder copyData = new StringBuilder();
         int count = 0, batchSize = 500000;
         for (UserRecord user : userRecords) {
             for (long followee : user.getFollowing()) {
-                copyData.append(user.getMid())
-                        .append('\t')
-                        .append(followee)
-                        .append('\n');
+                joiner.appendTo(copyData,
+                        user.getMid(),
+                        followee
+                );
+                copyData.append('\n');
                 count++;
                 if (count >= batchSize) {
-                    copyInsertion(copyData, copySql);
+                    copyInsertion(CharSource.wrap(copyData), copySql);
                     copyData.setLength(0);
                     count = 0;
                 }
             }
         }
         if (count > 0) {
-            copyInsertion(copyData, copySql);
+            copyInsertion(CharSource.wrap(copyData), copySql);
         }
         String createUserFollowTableConstraint = """
                 ALTER TABLE UserFollow(
@@ -193,36 +191,31 @@ public class DatabaseServiceImpl implements DatabaseService {
                 """;
         jdbcTemplate.execute(createVideoTable);
         String copySql = "COPY Video(bv, title, owner, commit_time, review_time, public_time, duration, description, reviewer) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t', NULL '')";
+        Joiner joiner = Joiner.on('\t');
         StringBuilder copyData = new StringBuilder();
         int count = 0, batchSize = 100000;
         for (VideoRecord video : videoRecords) {
-            copyData.append(video.getBv())
-                    .append('\t')
-                    .append(video.getTitle())
-                    .append('\t')
-                    .append(video.getOwnerMid())
-                    .append('\t')
-                    .append(video.getCommitTime())
-                    .append('\t')
-                    .append(video.getReviewTime())
-                    .append('\t')
-                    .append(video.getPublicTime())
-                    .append('\t')
-                    .append(video.getDuration())
-                    .append('\t')
-                    .append(video.getDescription())
-                    .append('\t')
-                    .append(video.getReviewer())
-                    .append('\n');
+            joiner.appendTo(copyData,
+                    video.getBv(),
+                    video.getTitle(),
+                    video.getOwnerMid(),
+                    video.getCommitTime(),
+                    video.getReviewTime(),
+                    video.getPublicTime(),
+                    video.getDuration(),
+                    video.getDescription(),
+                    video.getReviewer()
+            );
+            copyData.append('\n');
             count++;
             if (count >= batchSize) {
-                copyInsertion(copyData, copySql);
+                copyInsertion(CharSource.wrap(copyData), copySql);
                 copyData.setLength(0);
                 count = 0;
             }
         }
         if (count > 0) {
-            copyInsertion(copyData, copySql);
+            copyInsertion(CharSource.wrap(copyData), copySql);
         }
         String createVideoTableConstraint = """
                 ALTER TABLE Video(
@@ -255,6 +248,7 @@ public class DatabaseServiceImpl implements DatabaseService {
         jdbcTemplate.execute(createPublicVideoView);
     }
 
+    @SuppressWarnings("DuplicatedCode")
     @Transactional
     public void initLikeVideoTable(List<VideoRecord> VideoRecords) {
         String createLikeVideoTable = """
@@ -269,25 +263,27 @@ public class DatabaseServiceImpl implements DatabaseService {
                 """;
         jdbcTemplate.execute(createLikeVideoTable);
         String copySql = "COPY LikeVideo(mid, bv) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t')";
+        Joiner joiner = Joiner.on('\t');
         StringBuilder copyData = new StringBuilder();
         int count = 0, batchSize = 500000;
         for (VideoRecord video : VideoRecords) {
             String bv = video.getBv();
             for (long mid : video.getLike()) {
-                copyData.append(mid)
-                        .append('\t')
-                        .append(bv)
-                        .append('\n');
+                joiner.appendTo(copyData,
+                        mid,
+                        bv
+                );
+                copyData.append('\n');
                 count++;
                 if (count >= batchSize) {
-                    copyInsertion(copyData, copySql);
+                    copyInsertion(CharSource.wrap(copyData), copySql);
                     copyData.setLength(0);
                     count = 0;
                 }
             }
         }
         if (count > 0) {
-            copyInsertion(copyData, copySql);
+            copyInsertion(CharSource.wrap(copyData), copySql);
         }
         String createLikeVideoTableConstraint = """
                 ALTER TABLE LikeVideo(
@@ -302,6 +298,7 @@ public class DatabaseServiceImpl implements DatabaseService {
         jdbcTemplate.execute(createLikeVideoTableConstraint);
     }
 
+    @SuppressWarnings("DuplicatedCode")
     @Transactional
     public void initCoinVideoTable(List<VideoRecord> VideoRecords) {
         String createCoinVideoTable = """
@@ -315,26 +312,28 @@ public class DatabaseServiceImpl implements DatabaseService {
                 CREATE TABLE CoinVideo_4 PARTITION OF CoinVideo FOR VALUES WITH (MODULUS 4, REMAINDER 3);
                 """;
         jdbcTemplate.execute(createCoinVideoTable);
+        Joiner joiner = Joiner.on('\t');
         String copySql = "COPY CoinVideo(mid, bv) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t')";
         StringBuilder copyData = new StringBuilder();
         int count = 0, batchSize = 500000;
         for (VideoRecord video : VideoRecords) {
             String bv = video.getBv();
             for (long mid : video.getCoin()) {
-                copyData.append(mid)
-                        .append('\t')
-                        .append(bv)
-                        .append('\n');
+                joiner.appendTo(copyData,
+                        mid,
+                        bv
+                );
+                copyData.append('\n');
                 count++;
                 if (count >= batchSize) {
-                    copyInsertion(copyData, copySql);
+                    copyInsertion(CharSource.wrap(copyData), copySql);
                     copyData.setLength(0);
                     count = 0;
                 }
             }
         }
         if (count > 0) {
-            copyInsertion(copyData, copySql);
+            copyInsertion(CharSource.wrap(copyData), copySql);
         }
         String createCoinVideoTableConstraint = """
                 ALTER TABLE CoinVideo(
@@ -349,6 +348,7 @@ public class DatabaseServiceImpl implements DatabaseService {
         jdbcTemplate.execute(createCoinVideoTableConstraint);
     }
 
+    @SuppressWarnings("DuplicatedCode")
     @Transactional
     public void initFavVideoTable(List<VideoRecord> videoRecords) {
         String createFavVideoTable = """
@@ -362,26 +362,28 @@ public class DatabaseServiceImpl implements DatabaseService {
                 CREATE TABLE FavVideo_4 PARTITION OF FavVideo FOR VALUES WITH (MODULUS 4, REMAINDER 3);
                 """;
         jdbcTemplate.execute(createFavVideoTable);
+        Joiner joiner = Joiner.on('\t');
         String copySql = "COPY FavVideo(mid, bv) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t')";
         StringBuilder copyData = new StringBuilder();
         int count = 0, batchSize = 500000;
         for (VideoRecord video : videoRecords) {
             String bv = video.getBv();
             for (long mid : video.getFavorite()) {
-                copyData.append(mid)
-                        .append('\t')
-                        .append(bv)
-                        .append('\n');
+                joiner.appendTo(copyData,
+                        mid,
+                        bv
+                );
+                copyData.append('\n');
                 count++;
                 if (count >= batchSize) {
-                    copyInsertion(copyData, copySql);
+                    copyInsertion(CharSource.wrap(copyData), copySql);
                     copyData.setLength(0);
                     count = 0;
                 }
             }
         }
         if (count > 0) {
-            copyInsertion(copyData, copySql);
+            copyInsertion(CharSource.wrap(copyData), copySql);
         }
         String createFavVideoTableConstraint = """
                 ALTER TABLE FavVideo(
@@ -410,6 +412,7 @@ public class DatabaseServiceImpl implements DatabaseService {
                 CREATE TABLE ViewVideo_4 PARTITION OF ViewVideo FOR VALUES WITH (MODULUS 4, REMAINDER 3);
                 """;
         jdbcTemplate.execute(createViewVideoTable);
+        Joiner joiner = Joiner.on('\t');
         String copySql = "COPY ViewVideo(mid, bv, view_time) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t')";
         StringBuilder copyData = new StringBuilder();
         int count = 0, batchSize = 500000;
@@ -420,22 +423,22 @@ public class DatabaseServiceImpl implements DatabaseService {
 
             int length = video.getViewerMids().length;
             for (int i = 0; i < length; i++) {
-                copyData.append(viewerMids[i])
-                        .append('\t')
-                        .append(bv)
-                        .append('\t')
-                        .append(viewTimes[i])
-                        .append('\n');
+                joiner.appendTo(copyData,
+                        viewerMids[i],
+                        bv,
+                        viewTimes[i]
+                );
+                copyData.append('\n');
                 count++;
                 if (count >= batchSize) {
-                    copyInsertion(copyData, copySql);
+                    copyInsertion(CharSource.wrap(copyData), copySql);
                     copyData.setLength(0);
                     count = 0;
                 }
             }
         }
         if (count > 0) {
-            copyInsertion(copyData, copySql);
+            copyInsertion(CharSource.wrap(copyData), copySql);
         }
         String createViewVideoTableConstraint = """
                 ALTER TABLE ViewVideo
@@ -469,32 +472,30 @@ public class DatabaseServiceImpl implements DatabaseService {
                 CREATE TABLE Danmu_4 PARTITION OF Danmu FOR VALUES WITH (MODULUS 4, REMAINDER 3);
                 """;
         jdbcTemplate.execute(createDanmuTable);
+        Joiner joiner = Joiner.on('\t');
         String copySql = "COPY Danmu(id, bv, mid, dis_time, content, post_time) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t')";
         StringBuilder copyData = new StringBuilder();
         int count = 0, batchSize = 100000, danmuId = 0;
         for (DanmuRecord danmu : danmuRecords) {
             danmuId++;
-            copyData.append(danmuId)
-                    .append('\t')
-                    .append(danmu.getBv())
-                    .append('\t')
-                    .append(danmu.getMid())
-                    .append('\t')
-                    .append(danmu.getTime())
-                    .append('\t')
-                    .append(danmu.getContent())
-                    .append('\t')
-                    .append(danmu.getPostTime())
-                    .append('\n');
+            joiner.appendTo(copyData,
+                    danmuId,
+                    danmu.getBv(),
+                    danmu.getMid(),
+                    danmu.getTime(),
+                    danmu.getContent(),
+                    danmu.getPostTime()
+            );
+            copyData.append('\n');
             count++;
             if (count >= batchSize) {
-                copyInsertion(copyData, copySql);
+                copyInsertion(CharSource.wrap(copyData), copySql);
                 copyData.setLength(0);
                 count = 0;
             }
         }
         if (count > 0) {
-            copyInsertion(copyData, copySql);
+            copyInsertion(CharSource.wrap(copyData), copySql);
         }
         String createDanmuTableConstraint = """
                 SELECT setval(pg_get_serial_sequence('Danmu', 'id'), (SELECT MAX(id) FROM Danmu));
@@ -517,6 +518,7 @@ public class DatabaseServiceImpl implements DatabaseService {
         jdbcTemplate.execute(createDanmuTableConstraint);
     }
 
+    @SuppressWarnings("DuplicatedCode")
     @Transactional
     public void initLikeDanmuTable(List<DanmuRecord> danmuRecords) {
         String createLikeDanmuTable = """
@@ -530,26 +532,28 @@ public class DatabaseServiceImpl implements DatabaseService {
                 CREATE TABLE LikeDanmu_4 PARTITION OF LikeDanmu FOR VALUES WITH (MODULUS 4, REMAINDER 3);
                 """;
         jdbcTemplate.execute(createLikeDanmuTable);
+        Joiner joiner = Joiner.on('\t');
         String copySql = "COPY LikeDanmu(mid, id) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t')";
         StringBuilder copyData = new StringBuilder();
         int count = 0, batchSize = 500000, danmuID = 0;
         for (DanmuRecord danmu : danmuRecords) {
             danmuID++;
             for (long mid : danmu.getLikedBy()) {
-                copyData.append(mid)
-                        .append('\t')
-                        .append(danmuID)
-                        .append('\n');
+                joiner.appendTo(copyData,
+                        mid,
+                        danmuID
+                );
+                copyData.append('\n');
                 count++;
                 if (count >= batchSize) {
-                    copyInsertion(copyData, copySql);
+                    copyInsertion(CharSource.wrap(copyData), copySql);
                     copyData.setLength(0);
                     count = 0;
                 }
             }
         }
         if (count > 0) {
-            copyInsertion(copyData, copySql);
+            copyInsertion(CharSource.wrap(copyData), copySql);
         }
         String createLikeDanmuTableConstraint = """
                 ALTER TABLE LikeDanmu(
@@ -565,11 +569,11 @@ public class DatabaseServiceImpl implements DatabaseService {
     }
 
     @Transactional
-    public void copyInsertion(StringBuilder copyData, String copySql) {
+    public void copyInsertion(CharSource copyData, String copySql) {
         jdbcTemplate.execute((ConnectionCallback<Long>) connection -> {
             var copyManager = new CopyManager(connection.unwrap(BaseConnection.class));
             try {
-                return copyManager.copyIn(copySql, new StringReader(copyData.toString()));
+                return copyManager.copyIn(copySql, copyData.openStream());
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
