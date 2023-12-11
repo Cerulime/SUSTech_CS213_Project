@@ -14,11 +14,6 @@ public class VideoServiceImpl implements VideoService{
     }
 
     @Override
-    public boolean updateVideoInfo(AuthInfo auth, String bv, PostVideoReq req) {
-
-    }
-
-    @Override
     public boolean deleteVideo(AuthInfo auth, String bv) {
 
     }
