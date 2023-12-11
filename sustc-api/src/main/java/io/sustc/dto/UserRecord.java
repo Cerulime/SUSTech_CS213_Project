@@ -1,9 +1,10 @@
 package io.sustc.dto;
 
 import lombok.Data;
+import java.io.Serializable;
 
 @Data
-public class UserRecord {
+public class UserRecord implements Serializable {
 
     /**
      * The user's ID
@@ -18,7 +19,7 @@ public class UserRecord {
     /**
      * The user's sex
      */
-    private String sex;
+    private RegisterUserReq.Gender sex;
 
     /**
      * The user's birthday
@@ -56,7 +57,7 @@ public class UserRecord {
     private String qq;
 
     /**
-     * The user's wechat, may be null or empty
+     * The user's WeChat, may be null or empty
      */
     private String wechat;
 

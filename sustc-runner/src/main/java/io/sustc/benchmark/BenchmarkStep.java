@@ -11,5 +11,7 @@ public @interface BenchmarkStep {
 
     int order();
 
+    int timeout() default 5;
+
     String description() default "";
 }

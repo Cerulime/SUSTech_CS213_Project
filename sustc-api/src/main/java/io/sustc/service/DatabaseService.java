@@ -1,5 +1,6 @@
 package io.sustc.service;
 
+import io.sustc.dto.AuthInfo;
 import io.sustc.dto.DanmuRecord;
 import io.sustc.dto.UserRecord;
 import io.sustc.dto.VideoRecord;
@@ -46,4 +47,6 @@ public interface DatabaseService {
      * @return the sum of two numbers
      */
     Integer sum(int a, int b);
+
+    AuthInfo getAuthInfo(long mid);
 }

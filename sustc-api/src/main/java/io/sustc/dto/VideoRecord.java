@@ -1,10 +1,11 @@
 package io.sustc.dto;
 
 import lombok.Data;
+import java.io.Serializable;
 import java.sql.Timestamp;
 
 @Data
-public class VideoRecord {
+public class VideoRecord implements Serializable {
 
     /**
      * The BV code of this video
@@ -52,9 +53,9 @@ public class VideoRecord {
     private String description;
 
     /**
-     * The reviewer of this video, can be null
+     * The (reviewer) of this video, can be null
      */
-    private Long reviewer;
+    private long reviewer;
 
     /**
      * The users' {@code mid}s who liked this video

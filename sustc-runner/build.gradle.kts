@@ -14,11 +14,12 @@ dependencies {
             .takeIf { !it.isEmpty } ?: project(":sustc-api")
     )
     runtimeOnly("org.postgresql:postgresql")
-    implementation("com.opencsv:opencsv:5.8")
-    implementation("commons-io:commons-io:2.15.0")
+    implementation("com.opencsv:opencsv:latest.release")
+    implementation("commons-io:commons-io:latest.release")
+    implementation("org.furyio:fury-core:latest.release")
 
-    implementation(platform("org.springframework.shell:spring-shell-dependencies:2.1.13"))
-    implementation("org.springframework.shell:spring-shell-starter")
+    implementation(platform("org.springframework.shell:spring-shell-dependencies:latest.release"))
+    implementation("org.springframework.shell:spring-shell-starter:latest.release")
     annotationProcessor("org.springframework.boot:spring-boot-configuration-processor")
 }
 
