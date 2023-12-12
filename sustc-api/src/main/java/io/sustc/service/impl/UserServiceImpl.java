@@ -111,7 +111,7 @@ public class UserServiceImpl implements UserService {
             return false;
         boolean isFollowed = databaseService.isFollowing(auth.getMid(), followeeMid);
         if (isFollowed)
-            return databaseService.unfollow(auth.getMid(), followeeMid);
+            return !databaseService.unfollow(auth.getMid(), followeeMid);
         else
             return databaseService.follow(auth.getMid(), followeeMid);
     }

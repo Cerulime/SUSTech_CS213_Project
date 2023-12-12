@@ -480,7 +480,7 @@ public class DatabaseServiceImpl implements DatabaseService {
     public void initDanmuTable(List<DanmuRecord> danmuRecords) {
         String createDanmuTable = """
                 CREATE TABLE IF NOT EXISTS Danmu(
-                    id SERIAL,
+                    id BIGSERIAL,
                     bv CHAR(${MAX_BV_LENGTH}),
                     mid BIGINT,
                     dis_time FLOAT,
@@ -537,6 +537,8 @@ public class DatabaseServiceImpl implements DatabaseService {
                 ON DELETE CASCADE
                 );
                 CREATE INDEX DanmuBvIndex ON Danmu(bv);
+                CREATE INDEX DanmuDisTimeIndex ON Danmu(dis_time);
+                CREATE INDEX DanmuContentPostTimeIndex ON Danmu(content, post_time);
                 """;
         jdbcTemplate.execute(createDanmuTableConstraint);
     }
@@ -547,7 +549,7 @@ public class DatabaseServiceImpl implements DatabaseService {
         String createLikeDanmuTable = """
                 CREATE TABLE IF NOT EXISTS LikeDanmu(
                     mid BIGINT,
-                    id INT
+                    id BIGINT
                 ) PARTITION BY HASH (id);
                 CREATE TABLE LikeDanmu_1 PARTITION OF LikeDanmu FOR VALUES WITH (MODULUS 4, REMAINDER 0);
                 CREATE TABLE LikeDanmu_2 PARTITION OF LikeDanmu FOR VALUES WITH (MODULUS 4, REMAINDER 1);
@@ -913,4 +915,85 @@ public class DatabaseServiceImpl implements DatabaseService {
         bvList.toArray(bv);
         return bv;
     }
+
+    @Override
+    public float getValidVideoDuration(String bv) {
+        String sql = "SELECT duration FROM Video WHERE bv = ? AND (public_time IS NULL OR public_time < NOW())";
+        try {
+            return Optional.ofNullable(jdbcTemplate.queryForObject(sql, Float.class, bv)).orElse(-1f);
+        } catch (EmptyResultDataAccessException e) {
+            return -1f;
+        }
+    }
+
+    @Override
+    public boolean isVideoUnwatched(long mid, String bv) {
+        String sql = "SELECT mid FROM ViewVideo WHERE mid = ? AND bv = ?";
+        try {
+            return jdbcTemplate.queryForObject(sql, String.class, mid, bv) == null;
+        } catch (EmptyResultDataAccessException e) {
+            return true;
+        }
+    }
+
+    @Override
+    @Transactional
+    public long insertDanmu(long mid, String bv, String content, float time) {
+        String sql = "INSERT INTO Danmu(bv, mid, dis_time, content, post_time) VALUES (?, ?, ?, ?, NOW()) RETURNING id";
+        Long id = jdbcTemplate.queryForObject(sql, Long.class, bv, mid, time, content);
+        if (id == null)
+            return -1;
+        return id;
+    }
+
+    @Override
+    public List<Long> getDanmu(String bv, float timeStart, float timeEnd) {
+        String sql = "SELECT id FROM Danmu WHERE bv = ? AND dis_time BETWEEN ? AND ?";
+        return jdbcTemplate.queryForList(sql, Long.class, bv, timeStart, timeEnd);
+    }
+
+    @Override
+    public List<Long> getDanmuFiltered(String bv, float timeStart, float timeEnd) {
+        String sql = """
+                SELECT DISTINCT ON (content) id
+                FROM Danmu WHERE bv = ? AND dis_time BETWEEN ? AND ?
+                ORDER BY content, post_time ASC
+                """;
+        return jdbcTemplate.queryForList(sql, Long.class, bv, timeStart, timeEnd);
+    }
+
+    @Override
+    public String getBvByDanmuId(long id) {
+        String sql = "SELECT bv FROM Danmu WHERE id = ?";
+        try {
+            return jdbcTemplate.queryForObject(sql, String.class, id);
+        } catch (EmptyResultDataAccessException e) {
+            return null;
+        }
+    }
+
+    @Override
+    public boolean isDanmuLiked(long mid, long id) {
+        String sql = "SELECT mid FROM LikeDanmu WHERE mid = ? AND id = ?";
+        try {
+            return jdbcTemplate.queryForObject(sql, Long.class, mid, id) != null;
+        } catch (EmptyResultDataAccessException e) {
+            return false;
+        }
+    }
+
+    @Override
+    @Transactional
+    public boolean unlikeDanmu(long mid, long id) {
+        String sql = "DELETE FROM LikeDanmu WHERE mid = ? AND id = ?";
+        return jdbcTemplate.update(sql, mid, id) > 0;
+    }
+
+    @Override
+    @Transactional
+    public boolean likeDanmu(long mid, long id) {
+        String sql = "INSERT INTO LikeDanmu(mid, id) VALUES (?, ?)";
+        return jdbcTemplate.update(sql, mid, id) > 0;
+    }
+
 }

@@ -115,4 +115,22 @@ public interface DatabaseService {
     CompletableFuture<String[]> getPostedAsync(long mid);
 
     String[] getPosted(long mid);
+
+    float getValidVideoDuration(String bv);
+
+    boolean isVideoUnwatched(long mid, String bv);
+
+    long insertDanmu(long mid, String bv, String content, float time);
+
+    List<Long> getDanmu(String bv, float timeStart, float timeEnd);
+
+    List<Long> getDanmuFiltered(String bv, float timeStart, float timeEnd);
+
+    String getBvByDanmuId(long id);
+
+    boolean isDanmuLiked(long mid, long id);
+
+    boolean unlikeDanmu(long mid, long id);
+
+    boolean likeDanmu(long mid, long id);
 }
