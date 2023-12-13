@@ -241,8 +241,7 @@ public class DatabaseServiceImpl implements DatabaseService {
                     public_time TIMESTAMP,
                     duration REAL,
                     description VARCHAR(%d),
-                    reviewer BIGINT,
-                    view_count INTEGER DEFAULT 0
+                    reviewer BIGINT
                 ) PARTITION BY RANGE (public_time);
                 CREATE TABLE Video_0 PARTITION OF Video DEFAULT;
                 """, MAX_BV_LENGTH, MAX_TITLE_LENGTH, MAX_DESCRIPTION_LENGTH);
@@ -304,8 +303,7 @@ public class DatabaseServiceImpl implements DatabaseService {
                 ALTER COLUMN title SET NOT NULL,
                 ALTER COLUMN owner SET NOT NULL,
                 ALTER COLUMN commit_time SET NOT NULL,
-                ALTER COLUMN duration SET NOT NULL,
-                ALTER COLUMN view_count SET NOT NULL
+                ALTER COLUMN duration SET NOT NULL
                 );
                 ALTER TABLE Video(
                 ADD PRIMARY KEY (bv),
@@ -318,6 +316,64 @@ public class DatabaseServiceImpl implements DatabaseService {
                 CREATE INDEX VideoPublicTimeIndex ON Video(public_time);
                 """;
         jdbcTemplate.execute(createVideoTableConstraint);
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void initCountVideoTable(List<VideoRecord> videoRecords, List<DanmuRecord> danmuRecords) {
+        // TODO: 2023/12/14
+        // Rate counting
+        String createCountVideoTable = String.format("""
+                CREATE TABLE IF NOT EXISTS CountVideo(
+                    bv CHAR(%d),
+                    like_count INTEGER DEFAULT 0,
+                    coin_count INTEGER DEFAULT 0,
+                    fav_count INTEGER DEFAULT 0,
+                    view_count INTEGER DEFAULT 0,
+                    danmu_count INTEGER DEFAULT 0,
+                );
+                """, MAX_BV_LENGTH);
+        jdbcTemplate.execute(createCountVideoTable);
+        String copySql = "COPY CountVideo(bv, like_count, coin_count, fav_count, view_count, danmu_count) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t', FREEZE)";
+        Joiner joiner = Joiner.on('\t');
+        StringBuilder copyData = new StringBuilder();
+        int count = 0, batchSize = 100000;
+        Map<String, Long> danmuCounts = danmuRecords.stream()
+                .collect(Collectors.groupingBy(DanmuRecord::getBv, Collectors.counting()));
+        for (VideoRecord video : videoRecords) {
+            joiner.appendTo(copyData,
+                    video.getBv(),
+                    video.getLike().length,
+                    video.getCoin().length,
+                    video.getFavorite().length,
+                    video.getViewerMids().length,
+                    danmuCounts.get(video.getBv())
+            );
+            copyData.append('\n');
+            count++;
+            if (count >= batchSize) {
+                copyInsertion(CharSource.wrap(copyData), copySql);
+                copyData.setLength(0);
+                count = 0;
+            }
+        }
+        if (count > 0) {
+            copyInsertion(CharSource.wrap(copyData), copySql);
+        }
+        String createCountVideoTableConstraint = """
+                ALTER TABLE CountVideo(
+                ALTER COLUMN like_count SET NOT NULL,
+                ALTER COLUMN coin_count SET NOT NULL,
+                ALTER COLUMN fav_count SET NOT NULL,
+                ALTER COLUMN view_count SET NOT NULL,
+                ALTER COLUMN danmu_count SET NOT NULL
+                );
+                ALTER TABLE CountVideo(
+                ADD PRIMARY KEY (bv),
+                ADD FOREIGN KEY (bv) REFERENCES Video(bv)
+                ON DELETE CASCADE
+                );
+                """;
+        jdbcTemplate.execute(createCountVideoTableConstraint);
     }
 
     @SuppressWarnings("DuplicatedCode")
@@ -357,17 +413,8 @@ public class DatabaseServiceImpl implements DatabaseService {
         if (count > 0) {
             copyInsertion(CharSource.wrap(copyData), copySql);
         }
-        String createLikeVideoTableConstraint = """
-                ALTER TABLE LikeVideo(
-                ADD PRIMARY KEY (mid, bv),
-                ADD FOREIGN KEY (mid) REFERENCES UserAuth(mid)
-                ON DELETE CASCADE,
-                ADD FOREIGN KEY (bv) REFERENCES Video(bv)
-                ON DELETE CASCADE
-                );
-                CREATE INDEX LikeVideoBvIndex ON LikeVideo(bv);
-                """;
-        jdbcTemplate.execute(createLikeVideoTableConstraint);
+        setVideoConstrain("Like");
+        setTriggers("like", "LikeVideo");
     }
 
     @SuppressWarnings("DuplicatedCode")
@@ -407,17 +454,8 @@ public class DatabaseServiceImpl implements DatabaseService {
         if (count > 0) {
             copyInsertion(CharSource.wrap(copyData), copySql);
         }
-        String createCoinVideoTableConstraint = """
-                ALTER TABLE CoinVideo(
-                ADD PRIMARY KEY (mid, bv),
-                ADD FOREIGN KEY (mid) REFERENCES UserAuth(mid)
-                ON DELETE CASCADE,
-                ADD FOREIGN KEY (bv) REFERENCES Video(bv)
-                ON DELETE CASCADE
-                );
-                CREATE INDEX CoinVideoBvIndex ON CoinVideo(bv);
-                """;
-        jdbcTemplate.execute(createCoinVideoTableConstraint);
+        setVideoConstrain("Coin");
+        setTriggers("coin", "CoinVideo");
     }
 
     @SuppressWarnings("DuplicatedCode")
@@ -457,17 +495,8 @@ public class DatabaseServiceImpl implements DatabaseService {
         if (count > 0) {
             copyInsertion(CharSource.wrap(copyData), copySql);
         }
-        String createFavVideoTableConstraint = """
-                ALTER TABLE FavVideo(
-                ADD PRIMARY KEY (mid, bv),
-                ADD FOREIGN KEY (mid) REFERENCES UserAuth(mid)
-                ON DELETE CASCADE,
-                ADD FOREIGN KEY (bv) REFERENCES Video(bv)
-                ON DELETE CASCADE
-                );
-                CREATE INDEX FavVideoBvIndex ON FavVideo(bv);
-                """;
-        jdbcTemplate.execute(createFavVideoTableConstraint);
+        setVideoConstrain("Fav");
+        setTriggers("fav", "FavVideo");
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
@@ -484,36 +513,6 @@ public class DatabaseServiceImpl implements DatabaseService {
                 CREATE TABLE ViewVideo_4 PARTITION OF ViewVideo FOR VALUES WITH (MODULUS 4, REMAINDER 3);
                 """, MAX_BV_LENGTH);
         jdbcTemplate.execute(createViewVideoTable);
-        String setTriggers = """
-                CREATE OR REPLACE FUNCTION increase_view_count()
-                RETURNS TRIGGER AS $$
-                BEGIN
-                    UPDATE Video
-                    SET view_count = view_count + 1
-                    WHERE bv = NEW.bv;
-                    RETURN NEW;
-                END;
-                $$ LANGUAGE plpgsql;
-                CREATE TRIGGER update_view_count
-                AFTER INSERT ON ViewVideo
-                FOR EACH ROW
-                EXECUTE PROCEDURE increase_view_count();
-                                
-                CREATE OR REPLACE FUNCTION decrease_view_count()
-                RETURNS TRIGGER AS $$
-                BEGIN
-                    UPDATE Video
-                    SET view_count = view_count - 1
-                    WHERE bv = OLD.bv;
-                    RETURN OLD;
-                END;
-                $$ LANGUAGE plpgsql;
-                CREATE TRIGGER delete_view_count
-                AFTER DELETE ON ViewVideo
-                FOR EACH ROW
-                EXECUTE PROCEDURE decrease_view_count();
-                """;
-        jdbcTemplate.execute(setTriggers);
         Joiner joiner = Joiner.on('\t');
         String copySql = "COPY ViewVideo(mid, bv, view_time) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t', FREEZE)";
         StringBuilder copyData = new StringBuilder();
@@ -555,6 +554,7 @@ public class DatabaseServiceImpl implements DatabaseService {
                 CREATE INDEX ViewVideoBvIndex ON ViewVideo(bv);
                 """;
         jdbcTemplate.execute(createViewVideoTableConstraint);
+        setTriggers("view", "ViewVideo");
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
@@ -619,6 +619,7 @@ public class DatabaseServiceImpl implements DatabaseService {
                 CREATE INDEX DanmuContentPostTimeIndex ON Danmu(content, post_time);
                 """;
         jdbcTemplate.execute(createDanmuTableConstraint);
+        setTriggers("danmu", "Danmu");
     }
 
     @SuppressWarnings("DuplicatedCode")
@@ -683,6 +684,62 @@ public class DatabaseServiceImpl implements DatabaseService {
         });
     }
 
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void setTriggers(String type, String table) {
+        String setTriggers = """
+                CREATE OR REPLACE FUNCTION increase_${TYPE}_count()
+                RETURNS TRIGGER AS $$
+                BEGIN
+                    UPDATE CountVideo
+                    SET ${TYPE}_count = ${TYPE}_count + 1
+                    WHERE bv = NEW.bv;
+                    RETURN NEW;
+                END;
+                $$ LANGUAGE plpgsql;
+                DROP TRIGGER IF EXISTS update_${TYPE}_count ON ${TABLE};
+                CREATE TRIGGER update_${TYPE}_count
+                AFTER INSERT ON ${TABLE}
+                FOR EACH ROW
+                EXECUTE PROCEDURE increase_${TYPE}_count();
+                                
+                CREATE OR REPLACE FUNCTION decrease_${TYPE}_count()
+                RETURNS TRIGGER AS $$
+                BEGIN
+                    UPDATE CountVideo
+                    SET ${TYPE}_count = ${TYPE}_count - 1
+                    WHERE bv = OLD.bv;
+                    RETURN OLD;
+                END;
+                $$ LANGUAGE plpgsql;
+                DROP TRIGGER IF EXISTS delete_${TYPE}_count ON ${TABLE};
+                CREATE TRIGGER delete_${TYPE}_count
+                AFTER DELETE ON ${TABLE}
+                FOR EACH ROW
+                EXECUTE PROCEDURE decrease_${TYPE}_count();
+                """
+                .replace("${TYPE}", type)
+                .replace("${TABLE}", table);
+        //noinspection SqlSourceToSinkFlow
+        jdbcTemplate.execute(setTriggers);
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void setVideoConstrain(String table) {
+        String setVideoConstrain = """
+                ALTER TABLE ${TABLE}Video(
+                ADD PRIMARY KEY (mid, bv),
+                ADD FOREIGN KEY (mid) REFERENCES UserAuth(mid)
+                ON DELETE CASCADE,
+                ADD FOREIGN KEY (bv) REFERENCES Video(bv)
+                ON DELETE CASCADE
+                );
+                CREATE INDEX ${TABLE}VideoBvIndex ON ${TABLE}Video(bv);
+                """
+                .replace("${TABLE}", table);
+        //noinspection SqlSourceToSinkFlow
+        jdbcTemplate.execute(setVideoConstrain);
+    }
+
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public void importData(
@@ -718,6 +775,8 @@ public class DatabaseServiceImpl implements DatabaseService {
         initUserFollowTable(userRecords);
 
         initVideoTable(videoRecords);
+
+        initCountVideoTable(videoRecords, danmuRecords);
 
         initLikeVideoTable(videoRecords);
 
@@ -1279,15 +1338,22 @@ public class DatabaseServiceImpl implements DatabaseService {
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public void createUnloggedTable(long mid) {
-        String indexUnloggedTable = null;
+        String createPublicVideoTableConstrain = null;
         if (lastUpdateTime == null)
-            indexUnloggedTable = """
+            createPublicVideoTableConstrain = """
+                    ALTER TABLE PublicVideo(
+                    ADD PRIMARY KEY (bv),
+                    ADD FOREIGN KEY (bv) REFERENCES Video(bv)
+                    ON DELETE CASCADE
+                    );
                     CREATE INDEX PublicVideoIndex ON PublicVideo (relevance DESC, view_count DESC);
                     """;
         String createPublicVideoTable = """
                 CREATE UNLOGGED TABLE IF NOT EXISTS PublicVideo AS
-                SELECT Video.bv AS bv, lower(CONCAT(Video.title, Video.description, UserProfile.name)) AS text, Video.view_count AS view_count, 0 AS relevance
-                FROM UserProfile JOIN Video ON Video.owner = UserProfile.mid
+                SELECT Video.bv AS bv, lower(CONCAT(Video.title, Video.description, UserProfile.name)) AS text, CountVideo.view_count AS view_count, 0 AS relevance
+                FROM Video
+                JOIN UserProfile ON Video.owner = UserProfile.mid
+                JOIN CountVideo ON Video.bv = CountVideo.bv
                                 
                 """;
         String condition = """
@@ -1303,8 +1369,8 @@ public class DatabaseServiceImpl implements DatabaseService {
                 lastUpdateTime = jdbcTemplate.queryForObject(createPublicVideoTable + returnTimestamp, Timestamp.class);
                 break;
         }
-        if (indexUnloggedTable != null)
-            jdbcTemplate.execute(indexUnloggedTable);
+        if (createPublicVideoTableConstrain != null)
+            jdbcTemplate.execute(createPublicVideoTableConstrain);
     }
 
     @SuppressWarnings("DuplicatedCode")
@@ -1316,8 +1382,10 @@ public class DatabaseServiceImpl implements DatabaseService {
         jdbcTemplate.update(truncatePublicVideoTable);
         String insertPublicVideoTable = """
                 INSERT INTO PublicVideo
-                SELECT Video.bv AS bv, lower(CONCAT(Video.title, Video.description, UserProfile.name)) AS text, Video.view_count AS view_count, 0 AS relevance
-                FROM UserProfile JOIN Video ON Video.owner = UserProfile.mid
+                SELECT Video.bv AS bv, lower(CONCAT(Video.title, Video.description, UserProfile.name)) AS text, CountVideo.view_count AS view_count, 0 AS relevance
+                FROM Video
+                JOIN UserProfile ON Video.owner = UserProfile.mid
+                JOIN CountVideo ON Video.bv = CountVideo.bv
                                 
                 """;
         String condition = """
@@ -1340,7 +1408,7 @@ public class DatabaseServiceImpl implements DatabaseService {
     public void updateUnloggedTable(long mid) {
         String insertPublicVideoTable = """
                 INSERT INTO PublicVideo
-                SELECT Video.bv AS bv, lower(CONCAT(Video.title, Video.description, UserProfile.name)) AS text, Video.view_count AS view_count, 0 AS relevance
+                SELECT Video.bv AS bv, lower(CONCAT(Video.title, Video.description, UserProfile.name)) AS text, 0 AS view_count, 0 AS relevance
                 FROM UserProfile JOIN Video ON Video.owner = UserProfile.mid
                                 
                 """;
@@ -1359,9 +1427,9 @@ public class DatabaseServiceImpl implements DatabaseService {
         }
         String updatePublicVideoTable = """
                 UPDATE PublicVideo
-                SET view_count = Video.view_count
-                FROM Video
-                WHERE PublicVideo.bv = Video.bv;
+                SET view_count = CountVideo.view_count
+                FROM CountVideo
+                WHERE PublicVideo.bv = CountVideo.bv;
                 """;
         jdbcTemplate.update(updatePublicVideoTable);
     }
@@ -1387,6 +1455,32 @@ public class DatabaseServiceImpl implements DatabaseService {
                 OFFSET ?;
                 """;
         return jdbcTemplate.queryForList(sql, String.class, pageSize, pageSize * (pageNum - 1));
+    }
+
+    @Override
+    public List<String> getTopVideos(String bv) {
+        String sql = """
+                SELECT bv, COUNT(*) AS view_count
+                FROM ViewVideo
+                WHERE mid IN (
+                    SELECT mid
+                    FROM ViewVideo
+                    WHERE bv = ?
+                )
+                AND bv <> ?
+                GROUP BY bv
+                ORDER BY view_count DESC
+                LIMIT 5;
+                """;
+        return jdbcTemplate.query(sql, (rs, rowNum) -> rs.getString("bv"), bv, bv);
+    }
+
+    @Override
+    public List<String> getRecVideos(int pageSize, int pageNum) {
+        // TODO: 2023/12/13
+        // Use CountVideo
+        // Use Site optimization
+        return null;
     }
 
 }

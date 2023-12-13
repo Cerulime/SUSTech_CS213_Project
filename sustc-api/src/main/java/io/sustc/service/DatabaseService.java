@@ -186,4 +186,7 @@ public interface DatabaseService {
 
     List<String> searchVideo(int pageSize, int pageNum);
 
+    List<String> getTopVideos(String bv);
+
+    List<String> getRecVideos(int pageSize, int pageNum);
 }

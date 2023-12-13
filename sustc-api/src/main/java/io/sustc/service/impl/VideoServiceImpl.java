@@ -76,7 +76,7 @@ public class VideoServiceImpl implements VideoService {
     @Override
     @Transactional
     public List<String> searchVideo(AuthInfo auth, String keywords, int pageSize, int pageNum) {
-        if (userService.invalidAuthInfo(auth))
+        if (userService.invalidAuthInfo(auth) || pageSize <= 0 || pageNum <= 0)
             return null;
         if (lastKeywords == null)
             databaseService.createUnloggedTable(auth.getMid());

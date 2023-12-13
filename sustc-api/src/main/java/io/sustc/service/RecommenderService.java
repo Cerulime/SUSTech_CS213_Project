@@ -1,8 +1,8 @@
 package io.sustc.service;
 
-import java.util.List;
-
 import io.sustc.dto.AuthInfo;
+
+import java.util.List;
 
 public interface RecommenderService {
 
@@ -54,7 +54,7 @@ public interface RecommenderService {
      * Recommends videos for a user, restricted on their interests.
      * The user's interests are defined as the videos that the user's friend(s) have watched,
      * filter out the videos that the user has already watched.
-     * Friend(s) of current user is/are the one(s) who is/are both the current user' follower and followee at the same time.
+     * Friend(s) of current user is/are the one(s) who is/are both the current user's follower and followee at the same time.
      * Sort the videos by:
      * <ol>
      *   <li>The number of friends who have watched the video</li>
