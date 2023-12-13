@@ -1,11 +1,12 @@
 package io.sustc.dto;
 
 import lombok.Data;
+
 import java.io.Serializable;
 import java.sql.Timestamp;
 
 @Data
-public class VideoRecord implements Serializable {
+public class VideoRecord implements Serializable, Comparable<VideoRecord> {
 
     /**
      * The BV code of this video
@@ -81,4 +82,9 @@ public class VideoRecord implements Serializable {
      * The watch durations in seconds for the viewers {@code viewerMids}
      */
     private float[] viewTime;
+
+    @Override
+    public int compareTo(VideoRecord o) {
+        return this.publicTime.compareTo(o.publicTime);
+    }
 }

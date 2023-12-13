@@ -1,5 +1,6 @@
 package io.sustc.service.impl;
 
+import com.google.common.base.Splitter;
 import io.sustc.dto.AuthInfo;
 import io.sustc.dto.PostVideoReq;
 import io.sustc.dto.UserRecord;
@@ -11,20 +12,23 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
 @Service
 @Slf4j
-public class VideoServiceImpl implements VideoService{
+public class VideoServiceImpl implements VideoService {
     private final DatabaseService databaseService;
     private final UserService userService;
+    private List<String> lastKeywords;
 
     @Autowired
     public VideoServiceImpl(DatabaseService databaseService, UserService userService) {
         this.databaseService = databaseService;
         this.userService = userService;
+        lastKeywords = null;
     }
 
     @Override
@@ -70,12 +74,25 @@ public class VideoServiceImpl implements VideoService{
     }
 
     @Override
+    @Transactional
     public List<String> searchVideo(AuthInfo auth, String keywords, int pageSize, int pageNum) {
-        // 创建临时视图
-        // 遍历keywords更新排名
-        // 分页返回
-        // TODO
-        return null;
+        if (userService.invalidAuthInfo(auth))
+            return null;
+        if (lastKeywords == null)
+            databaseService.createUnloggedTable(auth.getMid());
+        List<String> keyword = Splitter.on(' ')
+                .omitEmptyStrings()
+                .splitToList(keywords);
+        Collections.sort(keyword);
+        if (keyword.equals(lastKeywords)) {
+            databaseService.updateUnloggedTable(auth.getMid());
+            return databaseService.searchVideo(pageSize, pageNum);
+        }
+        lastKeywords = keyword;
+        databaseService.resetUnloggedTable(auth.getMid());
+        for (String s : keyword)
+            databaseService.updateRelevance(s.toLowerCase());
+        return databaseService.searchVideo(pageSize, pageNum);
     }
 
     @Override

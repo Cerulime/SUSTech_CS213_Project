@@ -60,6 +60,7 @@ public interface DatabaseService {
     int MAX_DESCRIPTION_LENGTH = 2000;
 
     int MAX_CONTENT_LENGTH = 100;
+    int PARTITION_SIZE = 500000;
 
     AuthInfo getAuthInfo(long mid);
 
@@ -174,4 +175,15 @@ public interface DatabaseService {
     PostVideoReq getVideoReq(String bv);
 
     boolean updateVideoInfo(String bv, PostVideoReq req);
+
+    void createUnloggedTable(long mid);
+
+    void resetUnloggedTable(long mid);
+
+    void updateUnloggedTable(long mid);
+
+    void updateRelevance(String s);
+
+    List<String> searchVideo(int pageSize, int pageNum);
+
 }

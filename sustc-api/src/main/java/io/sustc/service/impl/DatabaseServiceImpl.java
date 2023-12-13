@@ -1,6 +1,8 @@
 package io.sustc.service.impl;
 
 import com.google.common.base.Joiner;
+import com.google.common.collect.Lists;
+import com.google.common.collect.Streams;
 import com.google.common.io.CharSource;
 import io.sustc.dto.*;
 import io.sustc.service.DatabaseService;
@@ -16,6 +18,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.sql.DataSource;
@@ -23,6 +26,7 @@ import java.io.IOException;
 import java.sql.Timestamp;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 
 @Service
 @EnableAsync
@@ -30,6 +34,7 @@ import java.util.concurrent.CompletableFuture;
 public class DatabaseServiceImpl implements DatabaseService {
 
     private final JdbcTemplate jdbcTemplate;
+    private Timestamp lastUpdateTime;
     private static final int[] bvState = {11, 10, 3, 8, 4, 6};
     private static final long bvXOR = 177451812L;
     private static final long bvAdd = 8728348608L;
@@ -75,6 +80,7 @@ public class DatabaseServiceImpl implements DatabaseService {
     @Autowired
     public DatabaseServiceImpl(DataSource dataSource) {
         this.jdbcTemplate = new JdbcTemplate(dataSource);
+        this.lastUpdateTime = null;
     }
 
     @Override
@@ -82,19 +88,16 @@ public class DatabaseServiceImpl implements DatabaseService {
         return List.of(12212224);
     }
 
-    @Transactional
+    @Transactional(propagation = Propagation.MANDATORY)
     public void initUserAuthTable(List<UserRecord> userRecords) {
-        String createUserAuthTable = """
+        String createUserAuthTable = String.format("""
                 CREATE TABLE IF NOT EXISTS UserAuth (
                     mid BIGSERIAL,
-                    password CHAR(${MAX_PASSWORD_LENGTH}),
-                    qq VARCHAR(${MAX_QQ_LENGTH}),
-                    wechat VARCHAR(${MAX_WECHAT_LENGTH})
+                    password CHAR(%d),
+                    qq VARCHAR(%d),
+                    wechat VARCHAR(%d)
                 );
-                """
-                .replace("${MAX_PASSWORD_LENGTH}", String.valueOf(MAX_PASSWORD_LENGTH))
-                .replace("${MAX_QQ_LENGTH}", String.valueOf(MAX_QQ_LENGTH))
-                .replace("${MAX_WECHAT_LENGTH}", String.valueOf(MAX_WECHAT_LENGTH));
+                """, MAX_PASSWORD_LENGTH, MAX_QQ_LENGTH, MAX_WECHAT_LENGTH);
         jdbcTemplate.execute(createUserAuthTable);
         Joiner joiner = Joiner.on('\t').useForNull("");
         StringBuilder copyData = new StringBuilder();
@@ -107,7 +110,7 @@ public class DatabaseServiceImpl implements DatabaseService {
             );
             copyData.append('\n');
         }
-        String copySql = "COPY UserAuth(mid, password, qq, wechat) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t', NULL '')";
+        String copySql = "COPY UserAuth(mid, password, qq, wechat) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t', NULL '', FREEZE)";
         copyInsertion(CharSource.wrap(copyData), copySql);
         String createUserAuthTableConstraint = """
                 SELECT setval(pg_get_serial_sequence('UserAuth', 'mid'), (SELECT MAX(mid) FROM UserAuth));
@@ -118,27 +121,25 @@ public class DatabaseServiceImpl implements DatabaseService {
                 ADD CONSTRAIN UniqueQq UNIQUE (qq),
                 ADD CONSTRAIN UniqueWechat UNIQUE (wechat)
                 );
-                CREATE INDEX UserAuthQqWechatIndex ON UserAuth USING bloom (qq, wechat);
+                CREATE INDEX UserAuthQqWechatIndex ON UserAuth USING bloom (qq, wechat) WITH (length = 16, col1 = 5, col2 = 5);
                 """;
         jdbcTemplate.execute(createUserAuthTableConstraint);
     }
 
-    @Transactional
+    @Transactional(propagation = Propagation.MANDATORY)
     public void initUserProfileTable(List<UserRecord> userRecords) {
-        String createUserProfileTable = """
+        String createUserProfileTable = String.format("""
                 CREATE TABLE IF NOT EXISTS UserProfile(
                     mid BIGINT,
-                    name VARCHAR(${MAX_NAME_LENGTH}),
+                    name VARCHAR(%d),
                     sex Gender,
                     birthday DATE,
                     level SMALLINT,
                     coin INTEGER,
-                    sign VARCHAR(${MAX_SIGN_LENGTH}),
+                    sign VARCHAR(%d),
                     identity Identity
                 );
-                """
-                .replace("${MAX_NAME_LENGTH}", String.valueOf(MAX_NAME_LENGTH))
-                .replace("${MAX_SIGN_LENGTH}", String.valueOf(MAX_SIGN_LENGTH));
+                """, MAX_NAME_LENGTH, MAX_SIGN_LENGTH);
         jdbcTemplate.execute(createUserProfileTable);
         Joiner joiner = Joiner.on('\t').useForNull("");
         StringBuilder copyData = new StringBuilder();
@@ -154,7 +155,7 @@ public class DatabaseServiceImpl implements DatabaseService {
                     user.getIdentity());
             copyData.append('\n');
         }
-        String copySql = "COPY UserProfile(mid, name, sex, birthday, level, coin, sign, identity) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t', NULL '')";
+        String copySql = "COPY UserProfile(mid, name, sex, birthday, level, coin, sign, identity) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t', NULL '', FREEZE)";
         copyInsertion(CharSource.wrap(copyData), copySql);
         String createUserProfileTableConstraint = """
                 ALTER TABLE UserProfile(
@@ -176,7 +177,7 @@ public class DatabaseServiceImpl implements DatabaseService {
         jdbcTemplate.execute(createUserProfileTableConstraint);
     }
 
-    @Transactional
+    @Transactional(propagation = Propagation.MANDATORY)
     public void initUserFollowTable(List<UserRecord> userRecords) {
         String createUserFollowTable = """
                 CREATE TABLE IF NOT EXISTS UserFollow(
@@ -189,7 +190,7 @@ public class DatabaseServiceImpl implements DatabaseService {
                 CREATE TABLE UserFollow_4 PARTITION OF UserFollow FOR VALUES WITH (MODULUS 4, REMAINDER 3);
                 """;
         jdbcTemplate.execute(createUserFollowTable);
-        String copySql = "COPY UserFollow(follower, followee) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t')";
+        String copySql = "COPY UserFollow(follower, followee) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t', FREEZE)";
         Joiner joiner = Joiner.on('\t');
         StringBuilder copyData = new StringBuilder();
         int count = 0, batchSize = 500000;
@@ -228,26 +229,49 @@ public class DatabaseServiceImpl implements DatabaseService {
         jdbcTemplate.execute(createUserFollowTableConstraint);
     }
 
-    @Transactional
+    @Transactional(propagation = Propagation.MANDATORY)
     public void initVideoTable(List<VideoRecord> videoRecords) {
-        String createVideoTable = """
+        String createVideoTable = String.format("""
                 CREATE TABLE IF NOT EXISTS Video(
-                    bv CHAR(${MAX_BV_LENGTH}),
-                    title VARCHAR(${MAX_TITLE_LENGTH}),
+                    bv CHAR(%d),
+                    title VARCHAR(%d),
                     owner BIGINT,
                     commit_time TIMESTAMP,
                     review_time TIMESTAMP,
                     public_time TIMESTAMP,
                     duration REAL,
-                    description VARCHAR(${MAX_DESCRIPTION_LENGTH}),
-                    reviewer BIGINT
-                );
-                """
-                .replace("${MAX_BV_LENGTH}", String.valueOf(MAX_BV_LENGTH))
-                .replace("${MAX_TITLE_LENGTH}", String.valueOf(MAX_TITLE_LENGTH))
-                .replace("${MAX_DESCRIPTION_LENGTH}", String.valueOf(MAX_DESCRIPTION_LENGTH));
+                    description VARCHAR(%d),
+                    reviewer BIGINT,
+                    view_count INTEGER DEFAULT 0
+                ) PARTITION BY RANGE (public_time);
+                CREATE TABLE Video_0 PARTITION OF Video DEFAULT;
+                """, MAX_BV_LENGTH, MAX_TITLE_LENGTH, MAX_DESCRIPTION_LENGTH);
         jdbcTemplate.execute(createVideoTable);
-        String copySql = "COPY Video(bv, title, owner, commit_time, review_time, public_time, duration, description, reviewer) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t', NULL '')";
+        Collections.sort(videoRecords);
+        List<List<VideoRecord>> partitions = Lists.partition(videoRecords, PARTITION_SIZE);
+        String createVideoPartitionTable = Streams.mapWithIndex(partitions.stream(), (partition, index) -> {
+            if (index == 0) {
+                return String.format("""
+                        CREATE TABLE Video_1 PARTITION OF Video
+                        FOR VALUES FROM ('-infinity') TO ('%s');
+                        """, partitions.size() > 1 ? partition.get(partition.size() - 1).getPublicTime().toString() : "infinity");
+            } else if (index == partitions.size() - 1) {
+                Timestamp lowerBound = partition.get(0).getPublicTime();
+                return String.format("""
+                        CREATE TABLE Video_%d PARTITION OF Video
+                        FOR VALUES FROM ('%s') TO ('infinity');
+                        """, index + 1, lowerBound.toString());
+            } else {
+                Timestamp lowerBound = partition.get(0).getPublicTime();
+                Timestamp upperBound = partition.get(partition.size() - 1).getPublicTime();
+                return String.format("""
+                        CREATE TABLE Video_%d PARTITION OF Video
+                        FOR VALUES FROM ('%s') TO ('%s');
+                        """, index + 1, lowerBound.toString(), upperBound.toString());
+            }
+        }).collect(Collectors.joining("\n"));
+        jdbcTemplate.execute(createVideoPartitionTable);
+        String copySql = "COPY Video(bv, title, owner, commit_time, review_time, public_time, duration, description, reviewer) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t', NULL '', FREEZE)";
         Joiner joiner = Joiner.on('\t');
         StringBuilder copyData = new StringBuilder();
         int count = 0, batchSize = 100000;
@@ -280,7 +304,8 @@ public class DatabaseServiceImpl implements DatabaseService {
                 ALTER COLUMN title SET NOT NULL,
                 ALTER COLUMN owner SET NOT NULL,
                 ALTER COLUMN commit_time SET NOT NULL,
-                ALTER COLUMN duration SET NOT NULL
+                ALTER COLUMN duration SET NOT NULL,
+                ALTER COLUMN view_count SET NOT NULL
                 );
                 ALTER TABLE Video(
                 ADD PRIMARY KEY (bv),
@@ -295,33 +320,21 @@ public class DatabaseServiceImpl implements DatabaseService {
         jdbcTemplate.execute(createVideoTableConstraint);
     }
 
-    @Transactional
-    public void initPublicVideoView() {
-        String createPublicVideoView = """
-                CREATE OR REPLACE MATERIALIZED VIEW PublicVideo AS
-                SELECT Video.bv, Video.title, Video.description, UserProfile.name AS owner_name
-                FROM Video JOIN UserProfile ON Video.owner = UserProfile.mid
-                WHERE COALESCE(Video.public_time, '-infinity'::TIMESTAMP) < NOW();
-                """;
-        jdbcTemplate.execute(createPublicVideoView);
-    }
-
     @SuppressWarnings("DuplicatedCode")
-    @Transactional
+    @Transactional(propagation = Propagation.MANDATORY)
     public void initLikeVideoTable(List<VideoRecord> VideoRecords) {
-        String createLikeVideoTable = """
+        String createLikeVideoTable = String.format("""
                 CREATE TABLE IF NOT EXISTS LikeVideo(
                     mid BIGINT,
-                    bv CHAR(${MAX_BV_LENGTH})
+                    bv CHAR(%d)
                 ) PARTITION BY HASH (mid);
                 CREATE TABLE LikeVideo_1 PARTITION OF LikeVideo FOR VALUES WITH (MODULUS 4, REMAINDER 0);
                 CREATE TABLE LikeVideo_2 PARTITION OF LikeVideo FOR VALUES WITH (MODULUS 4, REMAINDER 1);
                 CREATE TABLE LikeVideo_3 PARTITION OF LikeVideo FOR VALUES WITH (MODULUS 4, REMAINDER 2);
                 CREATE TABLE LikeVideo_4 PARTITION OF LikeVideo FOR VALUES WITH (MODULUS 4, REMAINDER 3);
-                """
-                .replace("${MAX_BV_LENGTH}", String.valueOf(MAX_BV_LENGTH));
+                """, MAX_BV_LENGTH);
         jdbcTemplate.execute(createLikeVideoTable);
-        String copySql = "COPY LikeVideo(mid, bv) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t')";
+        String copySql = "COPY LikeVideo(mid, bv) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t', FREEZE)";
         Joiner joiner = Joiner.on('\t');
         StringBuilder copyData = new StringBuilder();
         int count = 0, batchSize = 500000;
@@ -358,22 +371,21 @@ public class DatabaseServiceImpl implements DatabaseService {
     }
 
     @SuppressWarnings("DuplicatedCode")
-    @Transactional
+    @Transactional(propagation = Propagation.MANDATORY)
     public void initCoinVideoTable(List<VideoRecord> VideoRecords) {
-        String createCoinVideoTable = """
+        String createCoinVideoTable = String.format("""
                 CREATE TABLE IF NOT EXISTS CoinVideo(
                     mid BIGINT,
-                    bv CHAR(${MAX_BV_LENGTH})
+                    bv CHAR(%d)
                 ) PARTITION BY HASH (mid);
                 CREATE TABLE CoinVideo_1 PARTITION OF CoinVideo FOR VALUES WITH (MODULUS 4, REMAINDER 0);
                 CREATE TABLE CoinVideo_2 PARTITION OF CoinVideo FOR VALUES WITH (MODULUS 4, REMAINDER 1);
                 CREATE TABLE CoinVideo_3 PARTITION OF CoinVideo FOR VALUES WITH (MODULUS 4, REMAINDER 2);
                 CREATE TABLE CoinVideo_4 PARTITION OF CoinVideo FOR VALUES WITH (MODULUS 4, REMAINDER 3);
-                """
-                .replace("${MAX_BV_LENGTH}", String.valueOf(MAX_BV_LENGTH));
+                """, MAX_BV_LENGTH);
         jdbcTemplate.execute(createCoinVideoTable);
         Joiner joiner = Joiner.on('\t');
-        String copySql = "COPY CoinVideo(mid, bv) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t')";
+        String copySql = "COPY CoinVideo(mid, bv) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t', FREEZE)";
         StringBuilder copyData = new StringBuilder();
         int count = 0, batchSize = 500000;
         for (VideoRecord video : VideoRecords) {
@@ -409,22 +421,21 @@ public class DatabaseServiceImpl implements DatabaseService {
     }
 
     @SuppressWarnings("DuplicatedCode")
-    @Transactional
+    @Transactional(propagation = Propagation.MANDATORY)
     public void initFavVideoTable(List<VideoRecord> videoRecords) {
-        String createFavVideoTable = """
+        String createFavVideoTable = String.format("""
                 CREATE TABLE IF NOT EXISTS FavVideo(
                     mid BIGINT,
-                    bv CHAR(${MAX_BV_LENGTH})
+                    bv CHAR(%d)
                 ) PARTITION BY HASH (mid);
                 CREATE TABLE FavVideo_1 PARTITION OF FavVideo FOR VALUES WITH (MODULUS 4, REMAINDER 0);
                 CREATE TABLE FavVideo_2 PARTITION OF FavVideo FOR VALUES WITH (MODULUS 4, REMAINDER 1);
                 CREATE TABLE FavVideo_3 PARTITION OF FavVideo FOR VALUES WITH (MODULUS 4, REMAINDER 2);
                 CREATE TABLE FavVideo_4 PARTITION OF FavVideo FOR VALUES WITH (MODULUS 4, REMAINDER 3);
-                """
-                .replace("${MAX_BV_LENGTH}", String.valueOf(MAX_BV_LENGTH));
+                """, MAX_BV_LENGTH);
         jdbcTemplate.execute(createFavVideoTable);
         Joiner joiner = Joiner.on('\t');
-        String copySql = "COPY FavVideo(mid, bv) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t')";
+        String copySql = "COPY FavVideo(mid, bv) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t', FREEZE)";
         StringBuilder copyData = new StringBuilder();
         int count = 0, batchSize = 500000;
         for (VideoRecord video : videoRecords) {
@@ -459,23 +470,52 @@ public class DatabaseServiceImpl implements DatabaseService {
         jdbcTemplate.execute(createFavVideoTableConstraint);
     }
 
-    @Transactional
+    @Transactional(propagation = Propagation.MANDATORY)
     public void initViewVideoTable(List<VideoRecord> videoRecords) {
-        String createViewVideoTable = """
+        String createViewVideoTable = String.format("""
                 CREATE TABLE IF NOT EXISTS ViewVideo(
                     mid BIGINT,
-                    bv CHAR(${MAX_BV_LENGTH}),
+                    bv CHAR(%d),
                     view_time REAL
                 ) PARTITION BY HASH (mid);
                 CREATE TABLE ViewVideo_1 PARTITION OF ViewVideo FOR VALUES WITH (MODULUS 4, REMAINDER 0);
                 CREATE TABLE ViewVideo_2 PARTITION OF ViewVideo FOR VALUES WITH (MODULUS 4, REMAINDER 1);
                 CREATE TABLE ViewVideo_3 PARTITION OF ViewVideo FOR VALUES WITH (MODULUS 4, REMAINDER 2);
                 CREATE TABLE ViewVideo_4 PARTITION OF ViewVideo FOR VALUES WITH (MODULUS 4, REMAINDER 3);
-                """
-                .replace("${MAX_BV_LENGTH}", String.valueOf(MAX_BV_LENGTH));
+                """, MAX_BV_LENGTH);
         jdbcTemplate.execute(createViewVideoTable);
+        String setTriggers = """
+                CREATE OR REPLACE FUNCTION increase_view_count()
+                RETURNS TRIGGER AS $$
+                BEGIN
+                    UPDATE Video
+                    SET view_count = view_count + 1
+                    WHERE bv = NEW.bv;
+                    RETURN NEW;
+                END;
+                $$ LANGUAGE plpgsql;
+                CREATE TRIGGER update_view_count
+                AFTER INSERT ON ViewVideo
+                FOR EACH ROW
+                EXECUTE PROCEDURE increase_view_count();
+                                
+                CREATE OR REPLACE FUNCTION decrease_view_count()
+                RETURNS TRIGGER AS $$
+                BEGIN
+                    UPDATE Video
+                    SET view_count = view_count - 1
+                    WHERE bv = OLD.bv;
+                    RETURN OLD;
+                END;
+                $$ LANGUAGE plpgsql;
+                CREATE TRIGGER delete_view_count
+                AFTER DELETE ON ViewVideo
+                FOR EACH ROW
+                EXECUTE PROCEDURE decrease_view_count();
+                """;
+        jdbcTemplate.execute(setTriggers);
         Joiner joiner = Joiner.on('\t');
-        String copySql = "COPY ViewVideo(mid, bv, view_time) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t')";
+        String copySql = "COPY ViewVideo(mid, bv, view_time) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t', FREEZE)";
         StringBuilder copyData = new StringBuilder();
         int count = 0, batchSize = 500000;
         for (VideoRecord video : videoRecords) {
@@ -517,27 +557,25 @@ public class DatabaseServiceImpl implements DatabaseService {
         jdbcTemplate.execute(createViewVideoTableConstraint);
     }
 
-    @Transactional
+    @Transactional(propagation = Propagation.MANDATORY)
     public void initDanmuTable(List<DanmuRecord> danmuRecords) {
-        String createDanmuTable = """
+        String createDanmuTable = String.format("""
                 CREATE TABLE IF NOT EXISTS Danmu(
                     id BIGSERIAL,
-                    bv CHAR(${MAX_BV_LENGTH}),
+                    bv CHAR(%d),
                     mid BIGINT,
                     dis_time REAL,
-                    content VARCHAR(${MAX_CONTENT_LENGTH}),
+                    content VARCHAR(%d),
                     post_time TIMESTAMP
                 ) PARTITION BY HASH (id);
                 CREATE TABLE Danmu_1 PARTITION OF Danmu FOR VALUES WITH (MODULUS 4, REMAINDER 0);
                 CREATE TABLE Danmu_2 PARTITION OF Danmu FOR VALUES WITH (MODULUS 4, REMAINDER 1);
                 CREATE TABLE Danmu_3 PARTITION OF Danmu FOR VALUES WITH (MODULUS 4, REMAINDER 2);
                 CREATE TABLE Danmu_4 PARTITION OF Danmu FOR VALUES WITH (MODULUS 4, REMAINDER 3);
-                """
-                .replace("${MAX_BV_LENGTH}", String.valueOf(MAX_BV_LENGTH))
-                .replace("${MAX_CONTENT_LENGTH}", String.valueOf(MAX_CONTENT_LENGTH));
+                """, MAX_BV_LENGTH, MAX_CONTENT_LENGTH);
         jdbcTemplate.execute(createDanmuTable);
         Joiner joiner = Joiner.on('\t');
-        String copySql = "COPY Danmu(id, bv, mid, dis_time, content, post_time) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t')";
+        String copySql = "COPY Danmu(id, bv, mid, dis_time, content, post_time) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t', FREEZE)";
         StringBuilder copyData = new StringBuilder();
         int count = 0, batchSize = 100000, danmuId = 0;
         for (DanmuRecord danmu : danmuRecords) {
@@ -584,7 +622,7 @@ public class DatabaseServiceImpl implements DatabaseService {
     }
 
     @SuppressWarnings("DuplicatedCode")
-    @Transactional
+    @Transactional(propagation = Propagation.MANDATORY)
     public void initLikeDanmuTable(List<DanmuRecord> danmuRecords) {
         String createLikeDanmuTable = """
                 CREATE TABLE IF NOT EXISTS LikeDanmu(
@@ -598,7 +636,7 @@ public class DatabaseServiceImpl implements DatabaseService {
                 """;
         jdbcTemplate.execute(createLikeDanmuTable);
         Joiner joiner = Joiner.on('\t');
-        String copySql = "COPY LikeDanmu(mid, id) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t')";
+        String copySql = "COPY LikeDanmu(mid, id) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t', FREEZE)";
         StringBuilder copyData = new StringBuilder();
         int count = 0, batchSize = 500000, danmuID = 0;
         for (DanmuRecord danmu : danmuRecords) {
@@ -633,7 +671,7 @@ public class DatabaseServiceImpl implements DatabaseService {
         jdbcTemplate.execute(createLikeDanmuTableConstraint);
     }
 
-    @Transactional
+    @Transactional(propagation = Propagation.MANDATORY)
     public void copyInsertion(CharSource copyData, String copySql) {
         jdbcTemplate.execute((ConnectionCallback<Long>) connection -> {
             var copyManager = new CopyManager(connection.unwrap(BaseConnection.class));
@@ -646,7 +684,7 @@ public class DatabaseServiceImpl implements DatabaseService {
     }
 
     @Override
-    @Transactional
+    @Transactional(propagation = Propagation.MANDATORY)
     public void importData(
             List<DanmuRecord> danmuRecords,
             List<UserRecord> userRecords,
@@ -680,8 +718,6 @@ public class DatabaseServiceImpl implements DatabaseService {
         initUserFollowTable(userRecords);
 
         initVideoTable(videoRecords);
-
-        initPublicVideoView();
 
         initLikeVideoTable(videoRecords);
 
@@ -835,7 +871,7 @@ public class DatabaseServiceImpl implements DatabaseService {
     }
 
     @Override
-    @Transactional
+    @Transactional(propagation = Propagation.MANDATORY)
     public long insertUser(RegisterUserReq req) {
         String sql = "INSERT INTO UserAuth(password, qq, wechat) VALUES (?, ?, ?) RETURNING mid";
         Long mid = jdbcTemplate.queryForObject(sql, Long.class,
@@ -860,7 +896,7 @@ public class DatabaseServiceImpl implements DatabaseService {
     }
 
     @Override
-    @Transactional
+    @Transactional(propagation = Propagation.MANDATORY)
     public boolean deleteUser(long mid) {
         String sql = "DELETE FROM UserAuth WHERE mid = ?";
         return jdbcTemplate.update(sql, mid) > 0;
@@ -877,14 +913,14 @@ public class DatabaseServiceImpl implements DatabaseService {
     }
 
     @Override
-    @Transactional
+    @Transactional(propagation = Propagation.MANDATORY)
     public boolean follow(long followerMid, long followeeMid) {
         String sql = "INSERT INTO UserFollow(follower, followee) VALUES (?, ?)";
         return jdbcTemplate.update(sql, followerMid, followeeMid) > 0;
     }
 
     @Override
-    @Transactional
+    @Transactional(propagation = Propagation.MANDATORY)
     public boolean unfollow(long followerMid, long followeeMid) {
         String sql = "DELETE FROM UserFollow WHERE follower = ? AND followee = ?";
         return jdbcTemplate.update(sql, followerMid, followeeMid) > 0;
@@ -988,7 +1024,7 @@ public class DatabaseServiceImpl implements DatabaseService {
 
     @Override
     public float getValidVideoDuration(String bv) {
-        String sql = "SELECT duration FROM Video WHERE bv = ? AND (public_time IS NULL OR public_time < NOW())";
+        String sql = "SELECT duration FROM Video WHERE bv = ? AND (public_time IS NULL OR public_time < LOCALTIMESTAMP)";
         try {
             return Optional.ofNullable(jdbcTemplate.queryForObject(sql, Float.class, bv)).orElse(-1f);
         } catch (EmptyResultDataAccessException e) {
@@ -1007,9 +1043,9 @@ public class DatabaseServiceImpl implements DatabaseService {
     }
 
     @Override
-    @Transactional
+    @Transactional(propagation = Propagation.MANDATORY)
     public long insertDanmu(long mid, String bv, String content, float time) {
-        String sql = "INSERT INTO Danmu(bv, mid, dis_time, content, post_time) VALUES (?, ?, ?, ?, NOW()) RETURNING id";
+        String sql = "INSERT INTO Danmu(bv, mid, dis_time, content, post_time) VALUES (?, ?, ?, ?, LOCALTIMESTAMP) RETURNING id";
         Long id = jdbcTemplate.queryForObject(sql, Long.class, bv, mid, time, content);
         if (id == null)
             return -1;
@@ -1053,14 +1089,14 @@ public class DatabaseServiceImpl implements DatabaseService {
     }
 
     @Override
-    @Transactional
+    @Transactional(propagation = Propagation.MANDATORY)
     public boolean unlikeDanmu(long mid, long id) {
         String sql = "DELETE FROM LikeDanmu WHERE mid = ? AND id = ?";
         return jdbcTemplate.update(sql, mid, id) > 0;
     }
 
     @Override
-    @Transactional
+    @Transactional(propagation = Propagation.MANDATORY)
     public boolean likeDanmu(long mid, long id) {
         String sql = "INSERT INTO LikeDanmu(mid, id) VALUES (?, ?)";
         return jdbcTemplate.update(sql, mid, id) > 0;
@@ -1075,13 +1111,13 @@ public class DatabaseServiceImpl implements DatabaseService {
         UserRecord.Identity identity = getUserIdentity(auth.getMid());
         if (identity == UserRecord.Identity.SUPERUSER)
             return false;
-        sql = "SELECT reviewer FROM Video WHERE bv = ? AND (public_time IS NULL OR public_time < NOW())";
+        sql = "SELECT reviewer FROM Video WHERE bv = ? AND (public_time IS NULL OR public_time < LOCALTIMESTAMP)";
         long reviewer = Optional.ofNullable(jdbcTemplate.queryForObject(sql, Long.class, bv)).orElse(-1L);
         return reviewer <= 0;
     }
 
     @Override
-    @Transactional
+    @Transactional(propagation = Propagation.MANDATORY)
     public boolean coinVideo(long mid, String bv) {
         String sql = "INSERT INTO CoinVideo(mid, bv) VALUES (?, ?)";
         try {
@@ -1092,14 +1128,14 @@ public class DatabaseServiceImpl implements DatabaseService {
     }
 
     @Override
-    @Transactional
+    @Transactional(propagation = Propagation.MANDATORY)
     public void updateCoin(long mid, int newCoin) {
         String sql = "UPDATE UserProfile SET coin = ? WHERE mid = ?";
         jdbcTemplate.update(sql, newCoin, mid);
     }
 
     @Override
-    @Transactional
+    @Transactional(propagation = Propagation.MANDATORY)
     public boolean likeVideo(long mid, String bv) {
         String sql = "INSERT INTO LikeVideo(mid, bv) VALUES (?, ?)";
         return jdbcTemplate.update(sql, mid, bv) > 0;
@@ -1116,7 +1152,7 @@ public class DatabaseServiceImpl implements DatabaseService {
     }
 
     @Override
-    @Transactional
+    @Transactional(propagation = Propagation.MANDATORY)
     public boolean unlikeVideo(long mid, String bv) {
         String sql = "DELETE FROM LikeVideo WHERE mid = ? AND bv = ?";
         return jdbcTemplate.update(sql, mid, bv) > 0;
@@ -1133,14 +1169,14 @@ public class DatabaseServiceImpl implements DatabaseService {
     }
 
     @Override
-    @Transactional
+    @Transactional(propagation = Propagation.MANDATORY)
     public boolean uncollectVideo(long mid, String bv) {
         String sql = "DELETE FROM FavVideo WHERE mid = ? AND bv = ?";
         return jdbcTemplate.update(sql, mid, bv) > 0;
     }
 
     @Override
-    @Transactional
+    @Transactional(propagation = Propagation.MANDATORY)
     public boolean collectVideo(long mid, String bv) {
         String sql = "INSERT INTO FavVideo(mid, bv) VALUES (?, ?)";
         return jdbcTemplate.update(sql, mid, bv) > 0;
@@ -1159,9 +1195,9 @@ public class DatabaseServiceImpl implements DatabaseService {
     }
 
     @Override
-    @Transactional
+    @Transactional(propagation = Propagation.MANDATORY)
     public boolean reviewVideo(long mid, String bv) {
-        String sql = "UPDATE Video SET reviewer = ?, review_time = NOW() WHERE bv = ?";
+        String sql = "UPDATE Video SET reviewer = ?, review_time = LOCALTIMESTAMP WHERE bv = ?";
         return jdbcTemplate.update(sql, mid, bv) > 0;
     }
 
@@ -1202,16 +1238,16 @@ public class DatabaseServiceImpl implements DatabaseService {
     }
 
     @Override
-    @Transactional
+    @Transactional(propagation = Propagation.MANDATORY)
     public String insertVideo(long mid, PostVideoReq req) {
-        String sql = "INSERT INTO Video(bv, title, owner, commit_time, duration, description) VALUES (?, ?, ?, NOW(), ?, ?)";
+        String sql = "INSERT INTO Video(bv, title, owner, commit_time, duration, description) VALUES (?, ?, ?, LOCALTIMESTAMP, ?, ?)";
         String bv = generateBV();
         jdbcTemplate.update(sql, bv, req.getTitle(), mid, req.getDuration(), req.getDescription());
         return bv;
     }
 
     @Override
-    @Transactional
+    @Transactional(propagation = Propagation.MANDATORY)
     public boolean deleteVideo(String bv) {
         String sql = "DELETE FROM Video WHERE bv = ?";
         return jdbcTemplate.update(sql, bv) > 0;
@@ -1233,10 +1269,124 @@ public class DatabaseServiceImpl implements DatabaseService {
     }
 
     @Override
-    @Transactional
+    @Transactional(propagation = Propagation.MANDATORY)
     public boolean updateVideoInfo(String bv, PostVideoReq req) {
         String sql = "UPDATE Video SET title = ?, duration = ?, description = ?, public_time = ? WHERE bv = ?";
         return jdbcTemplate.update(sql, req.getTitle(), req.getDuration(), req.getDescription(), req.getPublicTime(), bv) > 0;
+    }
+
+    @SuppressWarnings("DuplicatedCode")
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void createUnloggedTable(long mid) {
+        String indexUnloggedTable = null;
+        if (lastUpdateTime == null)
+            indexUnloggedTable = """
+                    CREATE INDEX PublicVideoIndex ON PublicVideo (relevance DESC, view_count DESC);
+                    """;
+        String createPublicVideoTable = """
+                CREATE UNLOGGED TABLE IF NOT EXISTS PublicVideo AS
+                SELECT Video.bv AS bv, lower(CONCAT(Video.title, Video.description, UserProfile.name)) AS text, Video.view_count AS view_count, 0 AS relevance
+                FROM UserProfile JOIN Video ON Video.owner = UserProfile.mid
+                                
+                """;
+        String condition = """
+                WHERE Video.owner = ? OR (Video.public_time IS NULL OR Video.public_time < LOCALTIMESTAMP)
+                """;
+        String returnTimestamp = "RETURNING LOCALTIMESTAMP;";
+        UserRecord.Identity identity = getUserIdentity(mid);
+        switch (identity) {
+            case USER:
+                lastUpdateTime = jdbcTemplate.queryForObject(createPublicVideoTable + condition + returnTimestamp, Timestamp.class, mid);
+                break;
+            case SUPERUSER:
+                lastUpdateTime = jdbcTemplate.queryForObject(createPublicVideoTable + returnTimestamp, Timestamp.class);
+                break;
+        }
+        if (indexUnloggedTable != null)
+            jdbcTemplate.execute(indexUnloggedTable);
+    }
+
+    @SuppressWarnings("DuplicatedCode")
+    @Override
+    public void resetUnloggedTable(long mid) {
+        String truncatePublicVideoTable = """
+                TRUNCATE TABLE PublicVideo;
+                """;
+        jdbcTemplate.update(truncatePublicVideoTable);
+        String insertPublicVideoTable = """
+                INSERT INTO PublicVideo
+                SELECT Video.bv AS bv, lower(CONCAT(Video.title, Video.description, UserProfile.name)) AS text, Video.view_count AS view_count, 0 AS relevance
+                FROM UserProfile JOIN Video ON Video.owner = UserProfile.mid
+                                
+                """;
+        String condition = """
+                WHERE Video.owner = ? OR (Video.public_time IS NULL OR Video.public_time < LOCALTIMESTAMP)
+                """;
+        String returnTimestamp = "RETURNING LOCALTIMESTAMP;";
+        UserRecord.Identity identity = getUserIdentity(mid);
+        switch (identity) {
+            case USER:
+                lastUpdateTime = jdbcTemplate.queryForObject(insertPublicVideoTable + condition + returnTimestamp, Timestamp.class, mid);
+                break;
+            case SUPERUSER:
+                lastUpdateTime = jdbcTemplate.queryForObject(insertPublicVideoTable + returnTimestamp, Timestamp.class);
+                break;
+        }
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void updateUnloggedTable(long mid) {
+        String insertPublicVideoTable = """
+                INSERT INTO PublicVideo
+                SELECT Video.bv AS bv, lower(CONCAT(Video.title, Video.description, UserProfile.name)) AS text, Video.view_count AS view_count, 0 AS relevance
+                FROM UserProfile JOIN Video ON Video.owner = UserProfile.mid
+                                
+                """;
+        String condition = """
+                WHERE Video.owner = ? OR (Video.public_time IS NULL OR Video.public_time IN RANGE (?, LOCALTIMESTAMP)
+                """;
+        String returnTimestamp = "RETURNING LOCALTIMESTAMP;";
+        UserRecord.Identity identity = getUserIdentity(mid);
+        switch (identity) {
+            case USER:
+                lastUpdateTime = jdbcTemplate.queryForObject(insertPublicVideoTable + condition + returnTimestamp, Timestamp.class, lastUpdateTime, mid);
+                break;
+            case SUPERUSER:
+                lastUpdateTime = jdbcTemplate.queryForObject(insertPublicVideoTable + returnTimestamp, Timestamp.class);
+                break;
+        }
+        String updatePublicVideoTable = """
+                UPDATE PublicVideo
+                SET view_count = Video.view_count
+                FROM Video
+                WHERE PublicVideo.bv = Video.bv;
+                """;
+        jdbcTemplate.update(updatePublicVideoTable);
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void updateRelevance(String s) {
+        String updateRelevance = """
+                UPDATE PublicVideo
+                SET relevance = relevance + (length(text) - length(replace(text, ?, ''))) / length(?);
+                """;
+        jdbcTemplate.update(updateRelevance, s, s, s);
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
+    public List<String> searchVideo(int pageSize, int pageNum) {
+        String sql = """
+                SELECT bv
+                FROM PublicVideo
+                ORDER BY relevance DESC, view_count DESC
+                LIMIT ?
+                OFFSET ?;
+                """;
+        return jdbcTemplate.queryForList(sql, String.class, pageSize, pageSize * (pageNum - 1));
     }
 
 }
