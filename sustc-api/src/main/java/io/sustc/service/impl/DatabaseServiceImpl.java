@@ -9,6 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.postgresql.copy.CopyManager;
 import org.postgresql.core.BaseConnection;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -20,9 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 import javax.sql.DataSource;
 import java.io.IOException;
 import java.sql.Timestamp;
-import java.util.Date;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 
 @Service
@@ -31,6 +30,47 @@ import java.util.concurrent.CompletableFuture;
 public class DatabaseServiceImpl implements DatabaseService {
 
     private final JdbcTemplate jdbcTemplate;
+    private static final int[] bvState = {11, 10, 3, 8, 4, 6};
+    private static final long bvXOR = 177451812L;
+    private static final long bvAdd = 8728348608L;
+    @SuppressWarnings("SpellCheckingInspection")
+    private static final char[] trTable = "fZodR9XQDSUm21yCkr6zBqiveYah8bt4xsWpHnJE7jL5VG3guMTKNPAwcF".toCharArray();
+    private static final int[] tr = new int[128];
+    private static final long[] pow58 = new long[6];
+
+    static {
+        for (int i = 0; i < 58; i++) {
+            tr[trTable[i]] = i;
+        }
+        pow58[0] = 1;
+        for (int i = 1; i < 6; i++) {
+            pow58[i] = pow58[i - 1] * 58;
+        }
+    }
+
+    private long avCount = 10001;
+
+    private long getAv(String bv) {
+        long r = 0;
+        for (int i = 0; i < 6; i++) {
+            r += pow58[i] * tr[bv.charAt(bvState[i])];
+        }
+        return (r - bvAdd) ^ bvXOR;
+    }
+
+    private String getBv(long av) {
+        av = (av ^ bvXOR) + bvAdd;
+        char[] r = "BV1  4 1 7  ".toCharArray();
+        for (int i = 0; i < 6; i++) {
+            r[bvState[i]] = trTable[(int) (av / pow58[i] % 58)];
+        }
+        return new String(r);
+    }
+
+    private String generateBV() {
+        avCount++;
+        return getBv(avCount);
+    }
 
     @Autowired
     public DatabaseServiceImpl(DataSource dataSource) {
@@ -198,7 +238,7 @@ public class DatabaseServiceImpl implements DatabaseService {
                     commit_time TIMESTAMP,
                     review_time TIMESTAMP,
                     public_time TIMESTAMP,
-                    duration FLOAT,
+                    duration REAL,
                     description VARCHAR(${MAX_DESCRIPTION_LENGTH}),
                     reviewer BIGINT
                 );
@@ -212,6 +252,7 @@ public class DatabaseServiceImpl implements DatabaseService {
         StringBuilder copyData = new StringBuilder();
         int count = 0, batchSize = 100000;
         for (VideoRecord video : videoRecords) {
+            avCount = Math.max(avCount, getAv(video.getBv()));
             joiner.appendTo(copyData,
                     video.getBv(),
                     video.getTitle(),
@@ -424,7 +465,7 @@ public class DatabaseServiceImpl implements DatabaseService {
                 CREATE TABLE IF NOT EXISTS ViewVideo(
                     mid BIGINT,
                     bv CHAR(${MAX_BV_LENGTH}),
-                    view_time FLOAT
+                    view_time REAL
                 ) PARTITION BY HASH (mid);
                 CREATE TABLE ViewVideo_1 PARTITION OF ViewVideo FOR VALUES WITH (MODULUS 4, REMAINDER 0);
                 CREATE TABLE ViewVideo_2 PARTITION OF ViewVideo FOR VALUES WITH (MODULUS 4, REMAINDER 1);
@@ -483,7 +524,7 @@ public class DatabaseServiceImpl implements DatabaseService {
                     id BIGSERIAL,
                     bv CHAR(${MAX_BV_LENGTH}),
                     mid BIGINT,
-                    dis_time FLOAT,
+                    dis_time REAL,
                     content VARCHAR(${MAX_CONTENT_LENGTH}),
                     post_time TIMESTAMP
                 ) PARTITION BY HASH (id);
@@ -536,8 +577,7 @@ public class DatabaseServiceImpl implements DatabaseService {
                 ADD FOREIGN KEY (mid) REFERENCES UserAuth(mid)
                 ON DELETE CASCADE
                 );
-                CREATE INDEX DanmuBvIndex ON Danmu(bv);
-                CREATE INDEX DanmuDisTimeIndex ON Danmu(dis_time);
+                CREATE INDEX DanmuBvDisTimeIndex ON Danmu(bv, dis_time);
                 CREATE INDEX DanmuContentPostTimeIndex ON Danmu(content, post_time);
                 """;
         jdbcTemplate.execute(createDanmuTableConstraint);
@@ -653,9 +693,37 @@ public class DatabaseServiceImpl implements DatabaseService {
 
         initDanmuTable(danmuRecords);
 
+        createGetHotspotFunction();
+
         initLikeDanmuTable(danmuRecords);
 
         log.info("End importing at " + new Timestamp(new Date().getTime()));
+    }
+
+    private void createGetHotspotFunction() {
+        String createGetHotspotFunction = """
+                CREATE OR REPLACE FUNCTION get_hotspot(bv_value CHAR(${MAX_BV_LENGTH}))
+                RETURNS TABLE (hotspot INT) AS $$
+                DECLARE
+                    max_count INT;
+                BEGIN
+                    WITH BvCount AS (
+                        SELECT FLOOR(dis_time / 10) AS chunk, COUNT(*) AS count
+                        FROM Danmu
+                        WHERE bv = bv_value
+                        GROUP BY FLOOR(dis_time / 10)
+                    )
+                    SELECT INTO max_count MAX(count) FROM BvCount;
+                    
+                    RETURN QUERY
+                    SELECT chunk AS hotspot
+                    FROM BvCount
+                    WHERE count = max_count;
+                END;
+                $$ LANGUAGE plpgsql;
+                """
+                .replace("${MAX_BV_LENGTH}", String.valueOf(MAX_BV_LENGTH));
+        jdbcTemplate.execute(createGetHotspotFunction);
     }
 
     @Override
@@ -776,6 +844,8 @@ public class DatabaseServiceImpl implements DatabaseService {
                 req.getWechat());
         if (mid == null)
             return -1;
+        sql = "INSERT INTO UserProfile(mid, name, sex, birthday, level, coin, sign, identity) VALUES (?, ?, ?, ?, 0, 0, ?, UserRecord.Identity.USER.name())";
+        jdbcTemplate.update(sql, mid, req.getName(), req.getSex(), req.getBirthday(), req.getSign());
         return mid;
     }
 
@@ -994,6 +1064,179 @@ public class DatabaseServiceImpl implements DatabaseService {
     public boolean likeDanmu(long mid, long id) {
         String sql = "INSERT INTO LikeDanmu(mid, id) VALUES (?, ?)";
         return jdbcTemplate.update(sql, mid, id) > 0;
+    }
+
+    @Override
+    public boolean isVideoNotEngage(AuthInfo auth, String bv) {
+        String sql = "SELECT owner FROM Video WHERE bv = ?";
+        long ownerMid = Optional.ofNullable(jdbcTemplate.queryForObject(sql, Long.class, bv)).orElse(-1L);
+        if (ownerMid < 0 || ownerMid == auth.getMid())
+            return true;
+        UserRecord.Identity identity = getUserIdentity(auth.getMid());
+        if (identity == UserRecord.Identity.SUPERUSER)
+            return false;
+        sql = "SELECT reviewer FROM Video WHERE bv = ? AND (public_time IS NULL OR public_time < NOW())";
+        long reviewer = Optional.ofNullable(jdbcTemplate.queryForObject(sql, Long.class, bv)).orElse(-1L);
+        return reviewer <= 0;
+    }
+
+    @Override
+    @Transactional
+    public boolean coinVideo(long mid, String bv) {
+        String sql = "INSERT INTO CoinVideo(mid, bv) VALUES (?, ?)";
+        try {
+            return jdbcTemplate.update(sql, mid, bv) > 0;
+        } catch (DuplicateKeyException e) {
+            return false;
+        }
+    }
+
+    @Override
+    @Transactional
+    public void updateCoin(long mid, int newCoin) {
+        String sql = "UPDATE UserProfile SET coin = ? WHERE mid = ?";
+        jdbcTemplate.update(sql, newCoin, mid);
+    }
+
+    @Override
+    @Transactional
+    public boolean likeVideo(long mid, String bv) {
+        String sql = "INSERT INTO LikeVideo(mid, bv) VALUES (?, ?)";
+        return jdbcTemplate.update(sql, mid, bv) > 0;
+    }
+
+    @Override
+    public boolean isVideoLiked(long mid, String bv) {
+        String sql = "SELECT mid FROM LikeVideo WHERE mid = ? AND bv = ?";
+        try {
+            return jdbcTemplate.queryForObject(sql, Long.class, mid, bv) != null;
+        } catch (EmptyResultDataAccessException e) {
+            return false;
+        }
+    }
+
+    @Override
+    @Transactional
+    public boolean unlikeVideo(long mid, String bv) {
+        String sql = "DELETE FROM LikeVideo WHERE mid = ? AND bv = ?";
+        return jdbcTemplate.update(sql, mid, bv) > 0;
+    }
+
+    @Override
+    public boolean isVideoCollected(long mid, String bv) {
+        String sql = "SELECT mid FROM FavVideo WHERE mid = ? AND bv = ?";
+        try {
+            return jdbcTemplate.queryForObject(sql, Long.class, mid, bv) != null;
+        } catch (EmptyResultDataAccessException e) {
+            return false;
+        }
+    }
+
+    @Override
+    @Transactional
+    public boolean uncollectVideo(long mid, String bv) {
+        String sql = "DELETE FROM FavVideo WHERE mid = ? AND bv = ?";
+        return jdbcTemplate.update(sql, mid, bv) > 0;
+    }
+
+    @Override
+    @Transactional
+    public boolean collectVideo(long mid, String bv) {
+        String sql = "INSERT INTO FavVideo(mid, bv) VALUES (?, ?)";
+        return jdbcTemplate.update(sql, mid, bv) > 0;
+    }
+
+    @Override
+    public long getVideoOwner(String bv) {
+        String sql = "SELECT owner FROM Video WHERE bv = ?";
+        return Optional.ofNullable(jdbcTemplate.queryForObject(sql, Long.class, bv)).orElse(-1L);
+    }
+
+    @Override
+    public boolean isVideoReviewed(String bv) {
+        String sql = "SELECT reviewer FROM Video WHERE bv = ?";
+        return Optional.ofNullable(jdbcTemplate.queryForObject(sql, Long.class, bv)).orElse(-1L) > 0;
+    }
+
+    @Override
+    @Transactional
+    public boolean reviewVideo(long mid, String bv) {
+        String sql = "UPDATE Video SET reviewer = ?, review_time = NOW() WHERE bv = ?";
+        return jdbcTemplate.update(sql, mid, bv) > 0;
+    }
+
+    @Override
+    public boolean isDanmuExistByBv(String bv) {
+        String sql = "SELECT EXISTS(SELECT id FROM Danmu WHERE bv = ?)";
+        try {
+            return jdbcTemplate.queryForObject(sql, Long.class, bv) != null;
+        } catch (EmptyResultDataAccessException e) {
+            return false;
+        }
+    }
+
+    @Override
+    public Set<Integer> getHotspot(String bv) {
+        String sql = "SELECT hotspot FROM get_hotspot(?)";
+        return new HashSet<>(jdbcTemplate.queryForList(sql, Integer.class, bv));
+    }
+
+    @Override
+    public double getVideoViewTime(String bv) {
+        String sql = "SELECT SUM(view_time::DOUBLE PRECISION) FROM ViewVideo WHERE bv = ?";
+        try {
+            return Optional.ofNullable(jdbcTemplate.queryForObject(sql, Double.class, bv)).orElse(-1d);
+        } catch (EmptyResultDataAccessException e) {
+            return -1d;
+        }
+    }
+
+    @Override
+    public boolean isSameVideoExist(long mid, String title) {
+        String sql = "SELECT bv FROM Video WHERE owner = ? AND title = ?";
+        try {
+            return jdbcTemplate.queryForObject(sql, String.class, mid, title) != null;
+        } catch (EmptyResultDataAccessException e) {
+            return false;
+        }
+    }
+
+    @Override
+    @Transactional
+    public String insertVideo(long mid, PostVideoReq req) {
+        String sql = "INSERT INTO Video(bv, title, owner, commit_time, duration, description) VALUES (?, ?, ?, NOW(), ?, ?)";
+        String bv = generateBV();
+        jdbcTemplate.update(sql, bv, req.getTitle(), mid, req.getDuration(), req.getDescription());
+        return bv;
+    }
+
+    @Override
+    @Transactional
+    public boolean deleteVideo(String bv) {
+        String sql = "DELETE FROM Video WHERE bv = ?";
+        return jdbcTemplate.update(sql, bv) > 0;
+    }
+
+    @Override
+    public PostVideoReq getVideoReq(String bv) {
+        String sql = "SELECT title, duration, description, public_time FROM Video WHERE bv = ?";
+        try {
+            return jdbcTemplate.queryForObject(sql, (rs, rowNum) -> PostVideoReq.builder()
+                    .title(rs.getString("title"))
+                    .duration(rs.getFloat("duration"))
+                    .description(rs.getString("description"))
+                    .publicTime(rs.getTimestamp("public_time"))
+                    .build(), bv);
+        } catch (EmptyResultDataAccessException e) {
+            return null;
+        }
+    }
+
+    @Override
+    @Transactional
+    public boolean updateVideoInfo(String bv, PostVideoReq req) {
+        String sql = "UPDATE Video SET title = ?, duration = ?, description = ?, public_time = ? WHERE bv = ?";
+        return jdbcTemplate.update(sql, req.getTitle(), req.getDuration(), req.getDescription(), req.getPublicTime(), bv) > 0;
     }
 
 }

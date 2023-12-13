@@ -7,6 +7,7 @@ import io.sustc.service.UserService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
@@ -23,6 +24,7 @@ public class DanmuServiceImpl implements DanmuService {
     }
 
     @Override
+    @Transactional
     public long sendDanmu(AuthInfo auth, String bv, String content, float time) {
         if (bv == null || bv.isEmpty() || content == null || content.isEmpty())
             return -1;
@@ -60,8 +62,9 @@ public class DanmuServiceImpl implements DanmuService {
     }
 
     @Override
+    @Transactional
     public boolean likeDanmu(AuthInfo auth, long id) {
-        if (auth == null || userService.invalidAuthInfo(auth))
+        if (userService.invalidAuthInfo(auth))
             return false;
         String bv = databaseService.getBvByDanmuId(id);
         if (bv == null || bv.isEmpty() || databaseService.isVideoUnwatched(auth.getMid(), bv))

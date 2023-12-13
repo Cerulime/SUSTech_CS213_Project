@@ -10,10 +10,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.argon2.Argon2PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
-import java.time.DateTimeException;
-import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
 import java.util.concurrent.CompletableFuture;
 
 @Service
@@ -26,24 +24,10 @@ public class UserServiceImpl implements UserService {
         this.databaseService = databaseService;
     }
 
-    private boolean isValidBirthday(String birthday) {
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("uuuu年M月d日")
-                .withResolverStyle(java.time.format.ResolverStyle.STRICT);
-        try {
-            //noinspection ResultOfMethodCallIgnored
-            LocalDate.parse("2000年" + birthday, formatter);
-            return true;
-        } catch (DateTimeException e) {
-            return false;
-        }
-    }
-
     @Override
+    @Transactional
     public long register(RegisterUserReq req) {
-        if (req.getPassword() == null || req.getPassword().isEmpty() ||
-                req.getName() == null || req.getName().isEmpty() ||
-                req.getSex() == null ||
-                req.getBirthday() == null || req.getBirthday().isEmpty() || !isValidBirthday(req.getBirthday()))
+        if (!req.isValid())
             return -1;
         if (req.getQq() != null && req.getQq().length() > DatabaseService.MAX_QQ_LENGTH) {
             log.warn("QQ is too long: {}", req.getQq());
@@ -91,6 +75,7 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    @Transactional
     public boolean deleteAccount(AuthInfo auth, long mid) {
         if (invalidAuthInfo(auth) || databaseService.isMidNotExist(mid))
             return false;
@@ -106,6 +91,7 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    @Transactional
     public boolean follow(AuthInfo auth, long followeeMid) {
         if (invalidAuthInfo(auth) || databaseService.isMidNotExist(followeeMid))
             return false;

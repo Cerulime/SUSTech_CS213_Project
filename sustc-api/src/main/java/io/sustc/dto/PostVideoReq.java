@@ -7,6 +7,7 @@ import lombok.NoArgsConstructor;
 
 import java.io.Serializable;
 import java.sql.Timestamp;
+import java.time.LocalDateTime;
 
 @Data
 @Builder
@@ -40,4 +41,10 @@ public class PostVideoReq implements Serializable {
      * update a video), this field should be ignored.
      */
     private Timestamp publicTime;
+
+    public boolean isInvalid() {
+        return title == null || title.isEmpty() ||
+                !(duration >= 10) ||
+                (publicTime != null && !publicTime.after(Timestamp.valueOf(LocalDateTime.now())));
+    }
 }

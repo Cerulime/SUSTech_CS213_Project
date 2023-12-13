@@ -4,6 +4,7 @@ import io.sustc.dto.*;
 import org.springframework.scheduling.annotation.Async;
 
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
 public interface DatabaseService {
@@ -133,4 +134,44 @@ public interface DatabaseService {
     boolean unlikeDanmu(long mid, long id);
 
     boolean likeDanmu(long mid, long id);
+
+    boolean isVideoNotEngage(AuthInfo auth, String bv);
+
+    boolean coinVideo(long mid, String bv);
+
+    void updateCoin(long mid, int newCoin);
+
+    boolean likeVideo(long mid, String bv);
+
+    boolean isVideoLiked(long mid, String bv);
+
+    boolean unlikeVideo(long mid, String bv);
+
+    boolean isVideoCollected(long mid, String bv);
+
+    boolean uncollectVideo(long mid, String bv);
+
+    boolean collectVideo(long mid, String bv);
+
+    long getVideoOwner(String bv);
+
+    boolean isVideoReviewed(String bv);
+
+    boolean reviewVideo(long mid, String bv);
+
+    boolean isDanmuExistByBv(String bv);
+
+    Set<Integer> getHotspot(String bv);
+
+    double getVideoViewTime(String bv);
+
+    boolean isSameVideoExist(long mid, String title);
+
+    String insertVideo(long mid, PostVideoReq req);
+
+    boolean deleteVideo(String bv);
+
+    PostVideoReq getVideoReq(String bv);
+
+    boolean updateVideoInfo(String bv, PostVideoReq req);
 }
