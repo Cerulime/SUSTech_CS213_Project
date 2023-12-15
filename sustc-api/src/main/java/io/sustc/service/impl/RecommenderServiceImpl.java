@@ -3,6 +3,7 @@ package io.sustc.service.impl;
 import io.sustc.dto.AuthInfo;
 import io.sustc.service.DatabaseService;
 import io.sustc.service.RecommenderService;
+import io.sustc.service.UserService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -13,10 +14,12 @@ import java.util.List;
 @Slf4j
 public class RecommenderServiceImpl implements RecommenderService {
     private final DatabaseService databaseService;
+    private final UserService userService;
 
     @Autowired
-    public RecommenderServiceImpl(DatabaseService databaseService) {
+    public RecommenderServiceImpl(DatabaseService databaseService, UserService userService) {
         this.databaseService = databaseService;
+        this.userService = userService;
     }
 
     @Override
@@ -38,11 +41,15 @@ public class RecommenderServiceImpl implements RecommenderService {
 
     @Override
     public List<String> recommendVideosForUser(AuthInfo auth, int pageSize, int pageNum) {
-        return null;
+        if (userService.invalidAuthInfo(auth) || pageSize <= 0 || pageNum <= 0)
+            return null;
+        return databaseService.getRecVideosForUser(auth.getMid(), pageSize, pageNum);
     }
 
     @Override
     public List<Long> recommendFriends(AuthInfo auth, int pageSize, int pageNum) {
-        return null;
+        if (userService.invalidAuthInfo(auth) || pageSize <= 0 || pageNum <= 0)
+            return null;
+        return databaseService.getRecFriends(auth.getMid(), pageSize, pageNum);
     }
 }

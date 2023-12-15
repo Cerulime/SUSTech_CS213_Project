@@ -189,4 +189,8 @@ public interface DatabaseService {
     List<String> getTopVideos(String bv);
 
     List<String> getRecVideos(int pageSize, int pageNum);
+
+    List<String> getRecVideosForUser(long mid, int pageSize, int pageNum);
+
+    List<Long> getRecFriends(long mid, int pageSize, int pageNum);
 }

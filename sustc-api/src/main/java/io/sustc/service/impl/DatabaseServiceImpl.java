@@ -4,6 +4,7 @@ import com.google.common.base.Joiner;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Streams;
 import com.google.common.io.CharSource;
+import com.google.common.primitives.Floats;
 import io.sustc.dto.*;
 import io.sustc.service.DatabaseService;
 import io.sustc.service.UserService;
@@ -173,6 +174,7 @@ public class DatabaseServiceImpl implements DatabaseService {
                 ADD CONSTRAINT UniqueName UNIQUE (name)
                 );
                 CREATE INDEX UserProfileNameIndex ON UserProfile USING HASH (name);
+                CREATE INDEX UserProfileLevelIndex ON UserProfile(level DESC);
                 """;
         jdbcTemplate.execute(createUserProfileTableConstraint);
     }
@@ -320,8 +322,6 @@ public class DatabaseServiceImpl implements DatabaseService {
 
     @Transactional(propagation = Propagation.MANDATORY)
     public void initCountVideoTable(List<VideoRecord> videoRecords, List<DanmuRecord> danmuRecords) {
-        // TODO: 2023/12/14
-        // Rate counting
         String createCountVideoTable = String.format("""
                 CREATE TABLE IF NOT EXISTS CountVideo(
                     bv CHAR(%d),
@@ -329,24 +329,44 @@ public class DatabaseServiceImpl implements DatabaseService {
                     coin_count INTEGER DEFAULT 0,
                     fav_count INTEGER DEFAULT 0,
                     view_count INTEGER DEFAULT 0,
+                    view_rate DOUBLE PRECISION DEFAULT 0,
                     danmu_count INTEGER DEFAULT 0,
+                    score DOUBLE PRECISION DEFAULT 0
                 );
                 """, MAX_BV_LENGTH);
         jdbcTemplate.execute(createCountVideoTable);
-        String copySql = "COPY CountVideo(bv, like_count, coin_count, fav_count, view_count, danmu_count) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t', FREEZE)";
+        String copySql = "COPY CountVideo(bv, like_count, coin_count, fav_count, view_count, view_rate, danmu_count, score) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t', FREEZE)";
         Joiner joiner = Joiner.on('\t');
         StringBuilder copyData = new StringBuilder();
         int count = 0, batchSize = 100000;
         Map<String, Long> danmuCounts = danmuRecords.stream()
                 .collect(Collectors.groupingBy(DanmuRecord::getBv, Collectors.counting()));
         for (VideoRecord video : videoRecords) {
+            int likeCount = video.getLike().length;
+            int coinCount = video.getCoin().length;
+            int favCount = video.getFavorite().length;
+            int viewCount = video.getViewerMids().length;
+            double totalViewTime = Floats.asList(video.getViewTime()).stream()
+                    .mapToDouble(Float::doubleValue).sum();
+            double viewRate = totalViewTime / video.getDuration();
+            int danmuCount = danmuCounts.getOrDefault(video.getBv(), 0L).intValue();
+            double score = 0;
+            if (viewCount != 0) {
+                score += Math.min(1, likeCount / (double) viewCount);
+                score += Math.min(1, coinCount / (double) viewCount);
+                score += Math.min(1, favCount / (double) viewCount);
+                score += danmuCount / (double) viewCount;
+                score += viewRate / (double) viewCount;
+            }
             joiner.appendTo(copyData,
                     video.getBv(),
-                    video.getLike().length,
-                    video.getCoin().length,
-                    video.getFavorite().length,
-                    video.getViewerMids().length,
-                    danmuCounts.get(video.getBv())
+                    likeCount,
+                    coinCount,
+                    favCount,
+                    viewCount,
+                    viewRate,
+                    danmuCount,
+                    score
             );
             copyData.append('\n');
             count++;
@@ -365,15 +385,41 @@ public class DatabaseServiceImpl implements DatabaseService {
                 ALTER COLUMN coin_count SET NOT NULL,
                 ALTER COLUMN fav_count SET NOT NULL,
                 ALTER COLUMN view_count SET NOT NULL,
-                ALTER COLUMN danmu_count SET NOT NULL
+                ALTER COLUMN view_rate SET NOT NULL,
+                ALTER COLUMN danmu_count SET NOT NULL,
+                ALTER COLUMN score SET NOT NULL
                 );
                 ALTER TABLE CountVideo(
                 ADD PRIMARY KEY (bv),
                 ADD FOREIGN KEY (bv) REFERENCES Video(bv)
                 ON DELETE CASCADE
                 );
+                CREATE INDEX CountVideoScoreIndex ON CountVideo(score DESC);
                 """;
         jdbcTemplate.execute(createCountVideoTableConstraint);
+        String setTrigger = """
+                CREATE OR REPLACE FUNCTION calc_score()
+                RETURNS TRIGGER AS $$
+                BEGIN
+                    IF NEW.view_count = 0 THEN
+                        NEW.score := 0;
+                        RETURN NEW;
+                    END IF;
+                    NEW.score := LEAST(1, NEW.like_count / NEW.view_count) +
+                                 LEAST(1, NEW.coin_count / NEW.view_count) +
+                                 LEAST(1, NEW.fav_count / NEW.view_count) +
+                                 NEW.danmu_count / NEW.view_count +
+                                 NEW.view_rate / NEW.view_count;
+                    RETURN NEW;
+                END;
+                $$ LANGUAGE plpgsql;
+                DROP TRIGGER IF EXISTS update_score ON CountVideo;
+                CREATE TRIGGER update_score
+                BEFORE INSERT OR UPDATE ON CountVideo
+                FOR EACH ROW
+                EXECUTE PROCEDURE calc_score();
+                """;
+        jdbcTemplate.execute(setTrigger);
     }
 
     @SuppressWarnings("DuplicatedCode")
@@ -554,7 +600,40 @@ public class DatabaseServiceImpl implements DatabaseService {
                 CREATE INDEX ViewVideoBvIndex ON ViewVideo(bv);
                 """;
         jdbcTemplate.execute(createViewVideoTableConstraint);
-        setTriggers("view", "ViewVideo");
+        String setTriggers = """
+                CREATE OR REPLACE FUNCTION increase_view_count()
+                RETURNS TRIGGER AS $$
+                BEGIN
+                    UPDATE CountVideo
+                    SET view_count = view_count + 1,
+                        view_rate = view_rate + NEW.view_time / current_setting('sustc.temp_duration')::REAL
+                    WHERE bv = NEW.bv;
+                    RETURN NEW;
+                END;
+                $$ LANGUAGE plpgsql;
+                DROP TRIGGER IF EXISTS update_view_count ON ViewVideo;
+                CREATE TRIGGER update_${TYPE}_count
+                AFTER INSERT ON ViewVideo
+                FOR EACH ROW
+                EXECUTE PROCEDURE increase_view_count();
+                                
+                CREATE OR REPLACE FUNCTION decrease_view_count()
+                RETURNS TRIGGER AS $$
+                BEGIN
+                    UPDATE CountVideo
+                    SET view_count = view_count - 1,
+                        view_rate = view_rate - OLD.view_time / current_setting('sustc.temp_duration')::REAL
+                    WHERE bv = OLD.bv;
+                    RETURN OLD;
+                END;
+                $$ LANGUAGE plpgsql;
+                DROP TRIGGER IF EXISTS delete_view_count ON ViewVideo;
+                CREATE TRIGGER delete_view_count
+                AFTER DELETE ON ViewVideo
+                FOR EACH ROW
+                EXECUTE PROCEDURE decrease_view_count();
+                """;
+        jdbcTemplate.execute(setTriggers);
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
@@ -768,6 +847,24 @@ public class DatabaseServiceImpl implements DatabaseService {
                 """;
         jdbcTemplate.execute(createGenderEnum);
 
+        String config = """
+                SET work_mem = 128MB;
+                SET maintenance_work_mem = 1GB;
+                SET effective_cache_size = 2GB;
+                SET temp_buffers = 128MB;
+                SET wal_buffers = 16MB;
+                SET default_statistics_target = 500;
+                SET effective_io_concurrency = 10;
+                SET min_wal_size = 128MB;
+                SET max_wal_size = 1GB;
+                SET max_parallel_workers_per_gather = 4;
+                SET autovacuum = on;
+                SET stats_start_collector = on;
+                SET stats_row_level = on;
+                """;
+
+        jdbcTemplate.execute(config);
+
         initUserAuthTable(userRecords);
 
         initUserProfileTable(userRecords);
@@ -791,6 +888,8 @@ public class DatabaseServiceImpl implements DatabaseService {
         createGetHotspotFunction();
 
         initLikeDanmuTable(danmuRecords);
+
+        jdbcTemplate.execute("ANALYZE;");
 
         log.info("End importing at " + new Timestamp(new Date().getTime()));
     }
@@ -939,7 +1038,7 @@ public class DatabaseServiceImpl implements DatabaseService {
                 req.getWechat());
         if (mid == null)
             return -1;
-        sql = "INSERT INTO UserProfile(mid, name, sex, birthday, level, coin, sign, identity) VALUES (?, ?, ?, ?, 0, 0, ?, UserRecord.Identity.USER.name())";
+        sql = "INSERT INTO UserProfile(mid, name, sex, birthday, level, coin, sign, identity) VALUES (?, ?, ?, ?, 1, 0, ?, UserRecord.Identity.USER.name())";
         jdbcTemplate.update(sql, mid, req.getName(), req.getSex(), req.getBirthday(), req.getSign());
         return mid;
     }
@@ -1477,10 +1576,90 @@ public class DatabaseServiceImpl implements DatabaseService {
 
     @Override
     public List<String> getRecVideos(int pageSize, int pageNum) {
-        // TODO: 2023/12/13
-        // Use CountVideo
-        // Use Site optimization
-        return null;
+        String sql = """
+                SELECT bv
+                FROM CountVideo
+                ORDER BY score DESC, view_count DESC
+                LIMIT ?
+                OFFSET ?;
+                """;
+        return jdbcTemplate.queryForList(sql, String.class, pageSize, pageSize * (pageNum - 1));
+    }
+
+    @Override
+    public List<String> getRecVideosForUser(long mid, int pageSize, int pageNum) {
+        String sql = """
+                SELECT
+                    vv.bv,
+                    COUNT(vv.mid) AS view_count,
+                    v.owner,
+                    v.public_time,
+                    up.level
+                FROM (
+                    SELECT uf1.followee AS mid
+                    FROM UserFollow uf1
+                    JOIN UserFollow uf2
+                        ON uf1.follower = uf2.followee
+                        AND uf1.followee = uf2.follower
+                    WHERE uf1.follower = ?
+                ) AS friends
+                JOIN
+                    ViewVideo vv ON friends.mid = vv.mid
+                JOIN
+                    Video v ON v.bv = vv.bv
+                JOIN
+                    UserProfile up ON v.owner = up.mid
+                LEFT JOIN (
+                    SELECT bv
+                    FROM ViewVideo
+                    WHERE mid = ?
+                ) AS excluded_videos ON v.bv = excluded_videos.bv
+                WHERE
+                    excluded_videos.bv IS NULL
+                GROUP BY
+                    vv.bv
+                ORDER BY
+                    view_count DESC,
+                    up.level DESC,
+                    v.public_time DESC
+                LIMIT ?
+                OFFSET ?;
+                """;
+        return jdbcTemplate.query(sql, (rs, rowNum) -> rs.getString("bv"), mid, mid, pageSize, pageSize * (pageNum - 1));
+    }
+
+    @Override
+    public List<Long> getRecFriends(long mid, int pageSize, int pageNum) {
+        String sql = """
+                WITH user_followings AS (
+                    SELECT followee
+                    FROM UserFollow
+                    WHERE follower = ?
+                )
+                                
+                SELECT
+                    uf.followee AS mid,
+                    COUNT(uf.followee) AS common_followings,
+                    up.level
+                FROM
+                    UserFollow uf
+                JOIN
+                    user_followings uf1 ON uf.follower = uf1.followee
+                LEFT JOIN
+                    user_followings uf2 ON uf.followee = uf2.followee
+                JOIN
+                    UserProfile up ON uf.followee = up.mid
+                WHERE
+                    uf2.followee IS NULL
+                GROUP BY
+                    uf.followee
+                ORDER BY
+                    common_followings DESC,
+                    up.level DESC
+                LIMIT ?
+                OFFSET ?;
+                """;
+        return jdbcTemplate.query(sql, (rs, rowNum) -> rs.getLong("mid"), mid, pageSize, pageSize * (pageNum - 1));
     }
 
 }
