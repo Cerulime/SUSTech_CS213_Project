@@ -13,12 +13,13 @@ plugins {
 dependencies {
     implementation("org.springframework.boot:spring-boot-starter-jdbc")
     implementation("org.springframework.boot:spring-boot-starter-security")
+    implementation("org.bouncycastle:bcprov-jdk15on:latest.release")
     implementation("org.postgresql:postgresql")
     compileOnly("org.projectlombok:lombok")
     annotationProcessor("org.projectlombok:lombok")
     implementation("org.slf4j:slf4j-api")
     implementation("org.springframework.boot:spring-boot-starter-logging")
-    implementation("com.google.guava:guava")
+    implementation("com.google.guava:guava:latest.release")
 
     // You may add any utility library you want to use, such as guava.
     // ORM libraries are prohibited in this project.

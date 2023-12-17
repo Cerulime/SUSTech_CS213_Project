@@ -53,6 +53,6 @@ public class RegisterUserReq implements Serializable {
         return password != null && !password.isEmpty() &&
                 name != null && !name.isEmpty() &&
                 sex != null &&
-                birthday != null && !birthday.isEmpty() && isValidBirthday(birthday);
+                (birthday == null || !birthday.isEmpty() || isValidBirthday(birthday));
     }
 }

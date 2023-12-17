@@ -8,7 +8,6 @@ import io.sustc.service.DatabaseService;
 import io.sustc.service.UserService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.security.crypto.argon2.Argon2PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -52,8 +51,7 @@ public class UserServiceImpl implements UserService {
         if (auth.getPassword() != null && !auth.getPassword().isEmpty()) {
             AuthInfo data = databaseService.getAuthInfo(auth.getMid());
             if (data == null) return true;
-            Argon2PasswordEncoder encoder = new Argon2PasswordEncoder();
-            if (!encoder.matches(auth.getPassword(), data.getPassword()))
+            if (!passwordEncoder.matches(auth.getPassword(), data.getPassword()))
                 return true;
             data.setPassword(auth.getPassword());
             return !data.equals(auth);

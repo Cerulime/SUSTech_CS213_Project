@@ -46,6 +46,7 @@ public interface UserService {
      */
     boolean deleteAccount(AuthInfo auth, long mid);
 
+    Argon2PasswordEncoder passwordEncoder = new Argon2PasswordEncoder(8, 16, 1, 128, 1);
     /**
      * Encodes a password using Argon2. Result's length is {@link DatabaseService#MAX_PASSWORD_LENGTH}.
      *
@@ -53,7 +54,6 @@ public interface UserService {
      * @return the encoded password
      */
     static String encodePassword(String password) {
-        Argon2PasswordEncoder passwordEncoder = new Argon2PasswordEncoder(16, 32, 2, 8192, 3);
         return passwordEncoder.encode(password);
     }
 

@@ -48,19 +48,18 @@ public interface DatabaseService {
      */
     Integer sum(int a, int b);
 
-    int MAX_PASSWORD_LENGTH = 96;
-    int MAX_QQ_LENGTH = 10;
+    int MAX_PASSWORD_LENGTH = 63;
+    int MAX_QQ_LENGTH = 12;
     int MAX_WECHAT_LENGTH = 25;
 
-    int MAX_NAME_LENGTH = 20;
-    int MAX_SIGN_LENGTH = 50;
+    int MAX_NAME_LENGTH = 25;
+    int MAX_SIGN_LENGTH = 100;
 
     int MAX_BV_LENGTH = 12;
     int MAX_TITLE_LENGTH = 80;
     int MAX_DESCRIPTION_LENGTH = 2000;
 
     int MAX_CONTENT_LENGTH = 100;
-    int PARTITION_SIZE = 500000;
 
     AuthInfo getAuthInfo(long mid);
 

@@ -1,8 +1,8 @@
 package io.sustc.service.impl;
 
 import com.google.common.base.Joiner;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Streams;
+import com.google.common.escape.Escaper;
+import com.google.common.escape.Escapers;
 import com.google.common.io.CharSource;
 import com.google.common.primitives.Floats;
 import io.sustc.dto.*;
@@ -27,6 +27,9 @@ import java.io.IOException;
 import java.sql.Timestamp;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Service
@@ -36,6 +39,10 @@ public class DatabaseServiceImpl implements DatabaseService {
 
     private final JdbcTemplate jdbcTemplate;
     private Timestamp lastUpdateTime;
+    private final Escaper escaper = Escapers.builder()
+            .addEscape('\n', "\\n")
+            .addEscape('\t', "\\t")
+            .build();
     private static final int[] bvState = {11, 10, 3, 8, 4, 6};
     private static final long bvXOR = 177451812L;
     private static final long bvAdd = 8728348608L;
@@ -100,29 +107,39 @@ public class DatabaseServiceImpl implements DatabaseService {
                 );
                 """, MAX_PASSWORD_LENGTH, MAX_QQ_LENGTH, MAX_WECHAT_LENGTH);
         jdbcTemplate.execute(createUserAuthTable);
+        log.info("Begin encoding passwords");
         Joiner joiner = Joiner.on('\t').useForNull("");
-        StringBuilder copyData = new StringBuilder();
-        for (UserRecord user : userRecords) {
-            joiner.appendTo(copyData,
-                    user.getMid(),
-                    UserService.encodePassword(user.getPassword()),
-                    user.getQq(),
-                    user.getWechat()
-            );
-            copyData.append('\n');
+        AtomicBoolean hasError = new AtomicBoolean(false);
+        String copyData = userRecords.parallelStream().map(user -> {
+            if (user.getQq() != null && user.getQq().length() > MAX_QQ_LENGTH) {
+                log.error("QQ is too long: {}", user.getQq());
+                hasError.set(true);
+                return null;
+            }
+            if (user.getWechat() != null && user.getWechat().length() > MAX_WECHAT_LENGTH) {
+                log.error("WeChat is too long: {}", user.getWechat());
+                hasError.set(true);
+                return null;
+            }
+            String encodedPassword = UserService.encodePassword(user.getPassword());
+            return joiner.join(user.getMid(), encodedPassword, user.getQq(), user.getWechat());
+        }).filter(s -> s != null && !hasError.get()).collect(Collectors.joining("\n"));
+        if (hasError.get()) {
+            throw new IllegalArgumentException("One or more records have errors. Check logs for details.");
         }
+        log.info("Finish encoding passwords");
         String copySql = "COPY UserAuth(mid, password, qq, wechat) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t', NULL '', FREEZE)";
         copyInsertion(CharSource.wrap(copyData), copySql);
         String createUserAuthTableConstraint = """
                 SELECT setval(pg_get_serial_sequence('UserAuth', 'mid'), (SELECT MAX(mid) FROM UserAuth));
-                ALTER TABLE UserAuth
-                ALTER COLUMN password SET NOT NULL;
-                ALTER TABLE UserAuth(
-                ADD PRIMARY KEY (mid),
-                ADD CONSTRAIN UniqueQq UNIQUE (qq),
-                ADD CONSTRAIN UniqueWechat UNIQUE (wechat)
-                );
-                CREATE INDEX UserAuthQqWechatIndex ON UserAuth USING bloom (qq, wechat) WITH (length = 16, col1 = 5, col2 = 5);
+                                
+                ALTER TABLE UserAuth ALTER COLUMN password SET NOT NULL;
+                                
+                ALTER TABLE UserAuth ADD PRIMARY KEY (mid);
+                ALTER TABLE UserAuth ADD CONSTRAINT UniqueQq UNIQUE (qq);
+                ALTER TABLE UserAuth ADD CONSTRAINT UniqueWechat UNIQUE (wechat);
+                                
+                CREATE INDEX UserAuthQqWechatIndex ON UserAuth (qq, wechat);
                 """;
         jdbcTemplate.execute(createUserAuthTableConstraint);
     }
@@ -134,7 +151,8 @@ public class DatabaseServiceImpl implements DatabaseService {
                     mid BIGINT,
                     name VARCHAR(%d),
                     sex Gender,
-                    birthday DATE,
+                    birthday_month SMALLINT,
+                    birthday_day SMALLINT,
                     level SMALLINT,
                     coin INTEGER,
                     sign VARCHAR(%d),
@@ -144,35 +162,51 @@ public class DatabaseServiceImpl implements DatabaseService {
         jdbcTemplate.execute(createUserProfileTable);
         Joiner joiner = Joiner.on('\t').useForNull("");
         StringBuilder copyData = new StringBuilder();
+        Pattern pattern = Pattern.compile("(\\d+)月(\\d+)日");
         for (UserRecord user : userRecords) {
+            String birthday = user.getBirthday();
+            Matcher matcher = pattern.matcher(birthday);
+            boolean isEmpty = birthday.isEmpty();
+            if (!isEmpty && !matcher.matches()) {
+                log.error("Invalid birthday: {}", user.getBirthday());
+                throw new IllegalArgumentException("Invalid birthday");
+            }
+            if (escaper.escape(user.getName()).length() > MAX_NAME_LENGTH) {
+                log.info("User mid: {}", user.getMid());
+                log.error("Name is too long: {}", user.getName());
+//                throw new IllegalArgumentException("Name is too long");
+                continue;
+            }
+            if (escaper.escape(user.getSign()).length() > MAX_SIGN_LENGTH) {
+                log.info("User mid: {}", user.getMid());
+                log.error("Sign is too long: {}", user.getSign());
+//                throw new IllegalArgumentException("Sign is too long");
+                continue;
+            }
             joiner.appendTo(copyData,
                     user.getMid(),
-                    user.getName(),
+                    escaper.escape(user.getName()),
                     user.getSex(),
-                    user.getBirthday(),
+                    isEmpty ? null : matcher.group(1),
+                    isEmpty ? null : matcher.group(2),
                     user.getLevel(),
                     user.getCoin(),
-                    user.getSign(),
-                    user.getIdentity());
+                    escaper.escape(user.getSign()),
+                    user.getIdentity().name());
             copyData.append('\n');
         }
-        String copySql = "COPY UserProfile(mid, name, sex, birthday, level, coin, sign, identity) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t', NULL '', FREEZE)";
+        String copySql = "COPY UserProfile(mid, name, sex, birthday_month, birthday_day, level, coin, sign, identity) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t', NULL '', QUOTE E'\\x07', FREEZE)";
         copyInsertion(CharSource.wrap(copyData), copySql);
         String createUserProfileTableConstraint = """
-                ALTER TABLE UserProfile(
-                ALTER COLUMN name SET NOT NULL,
-                ALTER COLUMN sex SET NOT NULL,
-                ALTER COLUMN birthday SET NOT NULL,
-                ALTER COLUMN level SET NOT NULL,
-                ALTER COLUMN coin SET NOT NULL,
-                ALTER COLUMN identity SET NOT NULL
-                );
-                ALTER TABLE UserProfile(
-                ADD PRIMARY KEY (mid),
-                ADD FOREIGN KEY (mid) REFERENCES UserAuth(mid)
-                ON DELETE CASCADE,
-                ADD CONSTRAINT UniqueName UNIQUE (name)
-                );
+                ALTER TABLE UserProfile ALTER COLUMN name SET NOT NULL;
+                ALTER TABLE UserProfile ALTER COLUMN level SET NOT NULL;
+                ALTER TABLE UserProfile ALTER COLUMN coin SET NOT NULL;
+                ALTER TABLE UserProfile ALTER COLUMN identity SET NOT NULL;
+                                
+                ALTER TABLE UserProfile ADD PRIMARY KEY (mid);
+                ALTER TABLE UserProfile ADD FOREIGN KEY (mid) REFERENCES UserAuth(mid) ON DELETE CASCADE;
+                ALTER TABLE UserProfile ADD CONSTRAINT UniqueName UNIQUE (name);
+                                
                 CREATE INDEX UserProfileNameIndex ON UserProfile USING HASH (name);
                 CREATE INDEX UserProfileLevelIndex ON UserProfile(level DESC);
                 """;
@@ -192,7 +226,7 @@ public class DatabaseServiceImpl implements DatabaseService {
                 CREATE TABLE UserFollow_4 PARTITION OF UserFollow FOR VALUES WITH (MODULUS 4, REMAINDER 3);
                 """;
         jdbcTemplate.execute(createUserFollowTable);
-        String copySql = "COPY UserFollow(follower, followee) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t', FREEZE)";
+        String copySql = "COPY UserFollow(follower, followee) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t')";
         Joiner joiner = Joiner.on('\t');
         StringBuilder copyData = new StringBuilder();
         int count = 0, batchSize = 500000;
@@ -215,17 +249,13 @@ public class DatabaseServiceImpl implements DatabaseService {
             copyInsertion(CharSource.wrap(copyData), copySql);
         }
         String createUserFollowTableConstraint = """
-                ALTER TABLE UserFollow(
-                ALTER COLUMN follower SET NOT NULL,
-                ALTER COLUMN followee SET NOT NULL
-                );
-                ALTER TABLE UserFollow(
-                ADD PRIMARY KEY (follower, followee),
-                ADD FOREIGN KEY (follower) REFERENCES UserAuth(mid)
-                ON DELETE CASCADE,
-                ADD FOREIGN KEY (followee) REFERENCES UserAuth(mid)
-                ON DELETE CASCADE
-                );
+                ALTER TABLE UserFollow ALTER COLUMN follower SET NOT NULL;
+                ALTER TABLE UserFollow ALTER COLUMN followee SET NOT NULL;
+                                
+                ALTER TABLE UserFollow ADD PRIMARY KEY (follower, followee);
+                ALTER TABLE UserFollow ADD FOREIGN KEY (follower) REFERENCES UserAuth(mid) ON DELETE CASCADE;
+                ALTER TABLE UserFollow ADD FOREIGN KEY (followee) REFERENCES UserAuth(mid) ON DELETE CASCADE;
+                                
                 CREATE INDEX UserFolloweeIndex ON UserFollow(followee);
                 """;
         jdbcTemplate.execute(createUserFollowTableConstraint);
@@ -244,35 +274,10 @@ public class DatabaseServiceImpl implements DatabaseService {
                     duration REAL,
                     description VARCHAR(%d),
                     reviewer BIGINT
-                ) PARTITION BY RANGE (public_time);
-                CREATE TABLE Video_0 PARTITION OF Video DEFAULT;
+                );
                 """, MAX_BV_LENGTH, MAX_TITLE_LENGTH, MAX_DESCRIPTION_LENGTH);
         jdbcTemplate.execute(createVideoTable);
-        Collections.sort(videoRecords);
-        List<List<VideoRecord>> partitions = Lists.partition(videoRecords, PARTITION_SIZE);
-        String createVideoPartitionTable = Streams.mapWithIndex(partitions.stream(), (partition, index) -> {
-            if (index == 0) {
-                return String.format("""
-                        CREATE TABLE Video_1 PARTITION OF Video
-                        FOR VALUES FROM ('-infinity') TO ('%s');
-                        """, partitions.size() > 1 ? partition.get(partition.size() - 1).getPublicTime().toString() : "infinity");
-            } else if (index == partitions.size() - 1) {
-                Timestamp lowerBound = partition.get(0).getPublicTime();
-                return String.format("""
-                        CREATE TABLE Video_%d PARTITION OF Video
-                        FOR VALUES FROM ('%s') TO ('infinity');
-                        """, index + 1, lowerBound.toString());
-            } else {
-                Timestamp lowerBound = partition.get(0).getPublicTime();
-                Timestamp upperBound = partition.get(partition.size() - 1).getPublicTime();
-                return String.format("""
-                        CREATE TABLE Video_%d PARTITION OF Video
-                        FOR VALUES FROM ('%s') TO ('%s');
-                        """, index + 1, lowerBound.toString(), upperBound.toString());
-            }
-        }).collect(Collectors.joining("\n"));
-        jdbcTemplate.execute(createVideoPartitionTable);
-        String copySql = "COPY Video(bv, title, owner, commit_time, review_time, public_time, duration, description, reviewer) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t', NULL '', FREEZE)";
+        String copySql = "COPY Video(bv, title, owner, commit_time, review_time, public_time, duration, description, reviewer) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t', NULL '', QUOTE E'\\x07', FREEZE)";
         Joiner joiner = Joiner.on('\t');
         StringBuilder copyData = new StringBuilder();
         int count = 0, batchSize = 100000;
@@ -280,14 +285,14 @@ public class DatabaseServiceImpl implements DatabaseService {
             avCount = Math.max(avCount, getAv(video.getBv()));
             joiner.appendTo(copyData,
                     video.getBv(),
-                    video.getTitle(),
+                    escaper.escape(video.getTitle()),
                     video.getOwnerMid(),
                     video.getCommitTime(),
                     video.getReviewTime(),
                     video.getPublicTime(),
                     video.getDuration(),
-                    video.getDescription(),
-                    video.getReviewer()
+                    escaper.escape(video.getDescription()),
+                    video.getReviewer() == 0 ? "" : video.getReviewer()
             );
             copyData.append('\n');
             count++;
@@ -301,19 +306,15 @@ public class DatabaseServiceImpl implements DatabaseService {
             copyInsertion(CharSource.wrap(copyData), copySql);
         }
         String createVideoTableConstraint = """
-                ALTER TABLE Video(
-                ALTER COLUMN title SET NOT NULL,
-                ALTER COLUMN owner SET NOT NULL,
-                ALTER COLUMN commit_time SET NOT NULL,
-                ALTER COLUMN duration SET NOT NULL
-                );
-                ALTER TABLE Video(
-                ADD PRIMARY KEY (bv),
-                ADD FOREIGN KEY (owner) REFERENCES UserAuth(mid)
-                ON DELETE CASCADE,
-                ADD FOREIGN KEY (reviewer) REFERENCES UserAuth(mid)
-                 ON DELETE CASCADE
-                );
+                ALTER TABLE Video ALTER COLUMN title SET NOT NULL;
+                ALTER TABLE Video ALTER COLUMN owner SET NOT NULL;
+                ALTER TABLE Video ALTER COLUMN commit_time SET NOT NULL;
+                ALTER TABLE Video ALTER COLUMN duration SET NOT NULL;
+                                
+                ALTER TABLE Video ADD PRIMARY KEY (bv);
+                ALTER TABLE Video ADD FOREIGN KEY (owner) REFERENCES UserAuth(mid) ON DELETE CASCADE;
+                ALTER TABLE Video ADD FOREIGN KEY (reviewer) REFERENCES UserAuth(mid) ON DELETE CASCADE;
+                                
                 CREATE INDEX VideoOwnerIndex ON Video(owner);
                 CREATE INDEX VideoPublicTimeIndex ON Video(public_time);
                 """;
@@ -380,20 +381,17 @@ public class DatabaseServiceImpl implements DatabaseService {
             copyInsertion(CharSource.wrap(copyData), copySql);
         }
         String createCountVideoTableConstraint = """
-                ALTER TABLE CountVideo(
-                ALTER COLUMN like_count SET NOT NULL,
-                ALTER COLUMN coin_count SET NOT NULL,
-                ALTER COLUMN fav_count SET NOT NULL,
-                ALTER COLUMN view_count SET NOT NULL,
-                ALTER COLUMN view_rate SET NOT NULL,
-                ALTER COLUMN danmu_count SET NOT NULL,
-                ALTER COLUMN score SET NOT NULL
-                );
-                ALTER TABLE CountVideo(
-                ADD PRIMARY KEY (bv),
-                ADD FOREIGN KEY (bv) REFERENCES Video(bv)
-                ON DELETE CASCADE
-                );
+                ALTER TABLE CountVideo ALTER COLUMN like_count SET NOT NULL;
+                ALTER TABLE CountVideo ALTER COLUMN coin_count SET NOT NULL;
+                ALTER TABLE CountVideo ALTER COLUMN fav_count SET NOT NULL;
+                ALTER TABLE CountVideo ALTER COLUMN view_count SET NOT NULL;
+                ALTER TABLE CountVideo ALTER COLUMN view_rate SET NOT NULL;
+                ALTER TABLE CountVideo ALTER COLUMN danmu_count SET NOT NULL;
+                ALTER TABLE CountVideo ALTER COLUMN score SET NOT NULL;
+                                
+                ALTER TABLE CountVideo ADD PRIMARY KEY (bv);
+                ALTER TABLE CountVideo ADD FOREIGN KEY (bv) REFERENCES Video(bv) ON DELETE CASCADE;
+                                
                 CREATE INDEX CountVideoScoreIndex ON CountVideo(score DESC);
                 """;
         jdbcTemplate.execute(createCountVideoTableConstraint);
@@ -436,7 +434,7 @@ public class DatabaseServiceImpl implements DatabaseService {
                 CREATE TABLE LikeVideo_4 PARTITION OF LikeVideo FOR VALUES WITH (MODULUS 4, REMAINDER 3);
                 """, MAX_BV_LENGTH);
         jdbcTemplate.execute(createLikeVideoTable);
-        String copySql = "COPY LikeVideo(mid, bv) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t', FREEZE)";
+        String copySql = "COPY LikeVideo(mid, bv) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t')";
         Joiner joiner = Joiner.on('\t');
         StringBuilder copyData = new StringBuilder();
         int count = 0, batchSize = 500000;
@@ -459,7 +457,7 @@ public class DatabaseServiceImpl implements DatabaseService {
         if (count > 0) {
             copyInsertion(CharSource.wrap(copyData), copySql);
         }
-        setVideoConstrain("Like");
+        setVideoConstraint("Like");
         setTriggers("like", "LikeVideo");
     }
 
@@ -478,7 +476,7 @@ public class DatabaseServiceImpl implements DatabaseService {
                 """, MAX_BV_LENGTH);
         jdbcTemplate.execute(createCoinVideoTable);
         Joiner joiner = Joiner.on('\t');
-        String copySql = "COPY CoinVideo(mid, bv) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t', FREEZE)";
+        String copySql = "COPY CoinVideo(mid, bv) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t')";
         StringBuilder copyData = new StringBuilder();
         int count = 0, batchSize = 500000;
         for (VideoRecord video : VideoRecords) {
@@ -500,7 +498,7 @@ public class DatabaseServiceImpl implements DatabaseService {
         if (count > 0) {
             copyInsertion(CharSource.wrap(copyData), copySql);
         }
-        setVideoConstrain("Coin");
+        setVideoConstraint("Coin");
         setTriggers("coin", "CoinVideo");
     }
 
@@ -519,7 +517,7 @@ public class DatabaseServiceImpl implements DatabaseService {
                 """, MAX_BV_LENGTH);
         jdbcTemplate.execute(createFavVideoTable);
         Joiner joiner = Joiner.on('\t');
-        String copySql = "COPY FavVideo(mid, bv) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t', FREEZE)";
+        String copySql = "COPY FavVideo(mid, bv) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t')";
         StringBuilder copyData = new StringBuilder();
         int count = 0, batchSize = 500000;
         for (VideoRecord video : videoRecords) {
@@ -541,7 +539,7 @@ public class DatabaseServiceImpl implements DatabaseService {
         if (count > 0) {
             copyInsertion(CharSource.wrap(copyData), copySql);
         }
-        setVideoConstrain("Fav");
+        setVideoConstraint("Fav");
         setTriggers("fav", "FavVideo");
     }
 
@@ -560,7 +558,7 @@ public class DatabaseServiceImpl implements DatabaseService {
                 """, MAX_BV_LENGTH);
         jdbcTemplate.execute(createViewVideoTable);
         Joiner joiner = Joiner.on('\t');
-        String copySql = "COPY ViewVideo(mid, bv, view_time) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t', FREEZE)";
+        String copySql = "COPY ViewVideo(mid, bv, view_time) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t')";
         StringBuilder copyData = new StringBuilder();
         int count = 0, batchSize = 500000;
         for (VideoRecord video : videoRecords) {
@@ -588,15 +586,12 @@ public class DatabaseServiceImpl implements DatabaseService {
             copyInsertion(CharSource.wrap(copyData), copySql);
         }
         String createViewVideoTableConstraint = """
-                ALTER TABLE ViewVideo
-                ALTER COLUMN view_time SET NOT NULL;
-                ALTER TABLE ViewVideo(
-                ADD PRIMARY KEY (mid, bv),
-                ADD FOREIGN KEY (mid) REFERENCES UserAuth(mid)
-                ON DELETE CASCADE,
-                ADD FOREIGN KEY (bv) REFERENCES Video(bv)
-                ON DELETE CASCADE
-                );
+                ALTER TABLE ViewVideo ALTER COLUMN view_time SET NOT NULL;
+                                
+                ALTER TABLE ViewVideo ADD PRIMARY KEY (mid, bv);
+                ALTER TABLE ViewVideo ADD FOREIGN KEY (mid) REFERENCES UserAuth(mid) ON DELETE CASCADE;
+                ALTER TABLE ViewVideo ADD FOREIGN KEY (bv) REFERENCES Video(bv) ON DELETE CASCADE;
+                                
                 CREATE INDEX ViewVideoBvIndex ON ViewVideo(bv);
                 """;
         jdbcTemplate.execute(createViewVideoTableConstraint);
@@ -612,7 +607,7 @@ public class DatabaseServiceImpl implements DatabaseService {
                 END;
                 $$ LANGUAGE plpgsql;
                 DROP TRIGGER IF EXISTS update_view_count ON ViewVideo;
-                CREATE TRIGGER update_${TYPE}_count
+                CREATE TRIGGER update_view_count
                 AFTER INSERT ON ViewVideo
                 FOR EACH ROW
                 EXECUTE PROCEDURE increase_view_count();
@@ -654,7 +649,7 @@ public class DatabaseServiceImpl implements DatabaseService {
                 """, MAX_BV_LENGTH, MAX_CONTENT_LENGTH);
         jdbcTemplate.execute(createDanmuTable);
         Joiner joiner = Joiner.on('\t');
-        String copySql = "COPY Danmu(id, bv, mid, dis_time, content, post_time) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t', FREEZE)";
+        String copySql = "COPY Danmu(id, bv, mid, dis_time, content, post_time) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t', QUOTE E'\\x07')";
         StringBuilder copyData = new StringBuilder();
         int count = 0, batchSize = 100000, danmuId = 0;
         for (DanmuRecord danmu : danmuRecords) {
@@ -664,7 +659,7 @@ public class DatabaseServiceImpl implements DatabaseService {
                     danmu.getBv(),
                     danmu.getMid(),
                     danmu.getTime(),
-                    danmu.getContent(),
+                    escaper.escape(danmu.getContent()),
                     danmu.getPostTime()
             );
             copyData.append('\n');
@@ -680,20 +675,17 @@ public class DatabaseServiceImpl implements DatabaseService {
         }
         String createDanmuTableConstraint = """
                 SELECT setval(pg_get_serial_sequence('Danmu', 'id'), (SELECT MAX(id) FROM Danmu));
-                ALTER TABLE Danmu(
-                ALTER COLUMN bv SET NOT NULL,
-                ALTER COLUMN mid SET NOT NULL,
-                ALTER COLUMN dis_time SET NOT NULL,
-                ALTER COLUMN content SET NOT NULL,
-                ALTER COLUMN post_time SET NOT NULL
-                );
-                ALTER TABLE Danmu(
-                ADD PRIMARY KEY (id),
-                ADD FOREIGN KEY (bv) REFERENCES Video(bv)
-                ON DELETE CASCADE,
-                ADD FOREIGN KEY (mid) REFERENCES UserAuth(mid)
-                ON DELETE CASCADE
-                );
+                                
+                ALTER TABLE Danmu ALTER COLUMN bv SET NOT NULL;
+                ALTER TABLE Danmu ALTER COLUMN mid SET NOT NULL;
+                ALTER TABLE Danmu ALTER COLUMN dis_time SET NOT NULL;
+                ALTER TABLE Danmu ALTER COLUMN content SET NOT NULL;
+                ALTER TABLE Danmu ALTER COLUMN post_time SET NOT NULL;
+                                
+                ALTER TABLE Danmu ADD PRIMARY KEY (id);
+                ALTER TABLE Danmu ADD FOREIGN KEY (bv) REFERENCES Video(bv) ON DELETE CASCADE;
+                ALTER TABLE Danmu ADD FOREIGN KEY (mid) REFERENCES UserAuth(mid) ON DELETE CASCADE;
+                                
                 CREATE INDEX DanmuBvDisTimeIndex ON Danmu(bv, dis_time);
                 CREATE INDEX DanmuContentPostTimeIndex ON Danmu(content, post_time);
                 """;
@@ -716,7 +708,7 @@ public class DatabaseServiceImpl implements DatabaseService {
                 """;
         jdbcTemplate.execute(createLikeDanmuTable);
         Joiner joiner = Joiner.on('\t');
-        String copySql = "COPY LikeDanmu(mid, id) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t', FREEZE)";
+        String copySql = "COPY LikeDanmu(mid, id) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t')";
         StringBuilder copyData = new StringBuilder();
         int count = 0, batchSize = 500000, danmuID = 0;
         for (DanmuRecord danmu : danmuRecords) {
@@ -739,13 +731,10 @@ public class DatabaseServiceImpl implements DatabaseService {
             copyInsertion(CharSource.wrap(copyData), copySql);
         }
         String createLikeDanmuTableConstraint = """
-                ALTER TABLE LikeDanmu(
-                ADD PRIMARY KEY (mid, id),
-                ADD FOREIGN KEY (mid) REFERENCES UserAuth(mid)
-                ON DELETE CASCADE,
-                ADD FOREIGN KEY (id) REFERENCES Danmu(id)
-                ON DELETE CASCADE
-                );
+                ALTER TABLE LikeDanmu ADD PRIMARY KEY (mid, id);
+                ALTER TABLE LikeDanmu ADD FOREIGN KEY (mid) REFERENCES UserAuth(mid) ON DELETE CASCADE;
+                ALTER TABLE LikeDanmu ADD FOREIGN KEY (id) REFERENCES Danmu(id) ON DELETE CASCADE;
+                                
                 CREATE INDEX LikeDanmuIdIndex ON LikeDanmu(id);
                 """;
         jdbcTemplate.execute(createLikeDanmuTableConstraint);
@@ -803,15 +792,14 @@ public class DatabaseServiceImpl implements DatabaseService {
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
-    public void setVideoConstrain(String table) {
+    public void setVideoConstraint(String table) {
         String setVideoConstrain = """
-                ALTER TABLE ${TABLE}Video(
-                ADD PRIMARY KEY (mid, bv),
-                ADD FOREIGN KEY (mid) REFERENCES UserAuth(mid)
-                ON DELETE CASCADE,
-                ADD FOREIGN KEY (bv) REFERENCES Video(bv)
-                ON DELETE CASCADE
-                );
+                ALTER TABLE ${TABLE}Video ADD PRIMARY KEY (mid, bv);
+                ALTER TABLE ${TABLE}Video ADD FOREIGN KEY (mid) REFERENCES UserAuth(mid)
+                ON DELETE CASCADE;
+                ALTER TABLE ${TABLE}Video ADD FOREIGN KEY (bv) REFERENCES Video(bv)
+                ON DELETE CASCADE;
+                                
                 CREATE INDEX ${TABLE}VideoBvIndex ON ${TABLE}Video(bv);
                 """
                 .replace("${TABLE}", table);
@@ -820,7 +808,7 @@ public class DatabaseServiceImpl implements DatabaseService {
     }
 
     @Override
-    @Transactional(propagation = Propagation.MANDATORY)
+    @Transactional(propagation = Propagation.NESTED)
     public void importData(
             List<DanmuRecord> danmuRecords,
             List<UserRecord> userRecords,
@@ -848,19 +836,12 @@ public class DatabaseServiceImpl implements DatabaseService {
         jdbcTemplate.execute(createGenderEnum);
 
         String config = """
-                SET work_mem = 128MB;
-                SET maintenance_work_mem = 1GB;
-                SET effective_cache_size = 2GB;
-                SET temp_buffers = 128MB;
-                SET wal_buffers = 16MB;
+                SET work_mem = '128MB';
+                SET maintenance_work_mem = '1GB';
+                SET effective_cache_size = '2GB';
+                SET temp_buffers = '128MB';
                 SET default_statistics_target = 500;
-                SET effective_io_concurrency = 10;
-                SET min_wal_size = 128MB;
-                SET max_wal_size = 1GB;
                 SET max_parallel_workers_per_gather = 4;
-                SET autovacuum = on;
-                SET stats_start_collector = on;
-                SET stats_row_level = on;
                 """;
 
         jdbcTemplate.execute(config);
@@ -870,6 +851,8 @@ public class DatabaseServiceImpl implements DatabaseService {
         initUserProfileTable(userRecords);
 
         initUserFollowTable(userRecords);
+
+        log.info("Importing User table finished.");
 
         initVideoTable(videoRecords);
 
@@ -883,11 +866,15 @@ public class DatabaseServiceImpl implements DatabaseService {
 
         initViewVideoTable(videoRecords);
 
+        log.info("Importing Video table finished.");
+
         initDanmuTable(danmuRecords);
 
         createGetHotspotFunction();
 
         initLikeDanmuTable(danmuRecords);
+
+        log.info("Importing Danmu table finished.");
 
         jdbcTemplate.execute("ANALYZE;");
 
@@ -921,6 +908,7 @@ public class DatabaseServiceImpl implements DatabaseService {
     }
 
     @Override
+    @Transactional(propagation = Propagation.NESTED)
     public void truncate() {
         String sql = """
                 DO $$
@@ -1038,8 +1026,10 @@ public class DatabaseServiceImpl implements DatabaseService {
                 req.getWechat());
         if (mid == null)
             return -1;
-        sql = "INSERT INTO UserProfile(mid, name, sex, birthday, level, coin, sign, identity) VALUES (?, ?, ?, ?, 1, 0, ?, UserRecord.Identity.USER.name())";
-        jdbcTemplate.update(sql, mid, req.getName(), req.getSex(), req.getBirthday(), req.getSign());
+        Pattern pattern = Pattern.compile("(\\d{1,2})月(\\d{1,2})日");
+        Matcher matcher = pattern.matcher(req.getBirthday());
+        sql = "INSERT INTO UserProfile(mid, name, sex, birthday_month, birthday_day, level, coin, sign, identity) VALUES (?, ?, ?, ?, 1, 0, ?, ?::Identity)";
+        jdbcTemplate.update(sql, mid, req.getName(), req.getSex(), Integer.parseInt(matcher.group(1)), Integer.parseInt(matcher.group(2)), req.getSign(), UserRecord.Identity.USER.name());
         return mid;
     }
 
@@ -1416,9 +1406,9 @@ public class DatabaseServiceImpl implements DatabaseService {
         String sql = "SELECT title, duration, description, public_time FROM Video WHERE bv = ?";
         try {
             return jdbcTemplate.queryForObject(sql, (rs, rowNum) -> PostVideoReq.builder()
-                    .title(rs.getString("title"))
+                    .title(rs.getString("title").replace("\\n", "\n").replace("\\t", "\t"))
                     .duration(rs.getFloat("duration"))
-                    .description(rs.getString("description"))
+                    .description(rs.getString("description").replace("\\n", "\n").replace("\\t", "\t"))
                     .publicTime(rs.getTimestamp("public_time"))
                     .build(), bv);
         } catch (EmptyResultDataAccessException e) {
@@ -1429,7 +1419,7 @@ public class DatabaseServiceImpl implements DatabaseService {
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public boolean updateVideoInfo(String bv, PostVideoReq req) {
-        String sql = "UPDATE Video SET title = ?, duration = ?, description = ?, public_time = ? WHERE bv = ?";
+        String sql = "UPDATE Video SET title = ?, duration = ?, description = ?, public_time = ?, reviewer = NULL, review_time = NULL WHERE bv = ?";
         return jdbcTemplate.update(sql, req.getTitle(), req.getDuration(), req.getDescription(), req.getPublicTime(), bv) > 0;
     }
 
@@ -1550,6 +1540,7 @@ public class DatabaseServiceImpl implements DatabaseService {
                 SELECT bv
                 FROM PublicVideo
                 ORDER BY relevance DESC, view_count DESC
+                WHERE relevance > 0
                 LIMIT ?
                 OFFSET ?;
                 """;
@@ -1615,7 +1606,7 @@ public class DatabaseServiceImpl implements DatabaseService {
                     WHERE mid = ?
                 ) AS excluded_videos ON v.bv = excluded_videos.bv
                 WHERE
-                    excluded_videos.bv IS NULL
+                    excluded_videos.bv IS NULL AND (v.public_time IS NULL OR v.public_time < LOCALTIMESTAMP)
                 GROUP BY
                     vv.bv
                 ORDER BY

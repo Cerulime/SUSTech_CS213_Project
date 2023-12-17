@@ -18,8 +18,8 @@ dependencies {
     implementation("commons-io:commons-io:latest.release")
     implementation("org.furyio:fury-core:latest.release")
 
-    implementation(platform("org.springframework.shell:spring-shell-dependencies:latest.release"))
-    implementation("org.springframework.shell:spring-shell-starter:latest.release")
+    implementation(platform("org.springframework.shell:spring-shell-dependencies:2.1.13"))
+    implementation("org.springframework.shell:spring-shell-starter")
     annotationProcessor("org.springframework.boot:spring-boot-configuration-processor")
 }
 
