@@ -1,6 +1,5 @@
 package io.sustc.service.impl;
 
-import com.google.common.base.Splitter;
 import io.sustc.dto.AuthInfo;
 import io.sustc.dto.PostVideoReq;
 import io.sustc.dto.UserRecord;
@@ -12,10 +11,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Collections;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 @Slf4j
@@ -80,10 +80,8 @@ public class VideoServiceImpl implements VideoService {
             return null;
         if (lastKeywords == null)
             databaseService.createUnloggedTable(auth.getMid());
-        List<String> keyword = Splitter.on(' ')
-                .omitEmptyStrings()
-                .splitToList(keywords);
-        Collections.sort(keyword);
+        List<String> keyword = Arrays.stream(keywords.split(" "))
+                .filter(s -> !s.isEmpty()).sorted().collect(Collectors.toList());
         if (keyword.equals(lastKeywords)) {
             databaseService.updateUnloggedTable(auth.getMid());
             return databaseService.searchVideo(pageSize, pageNum);

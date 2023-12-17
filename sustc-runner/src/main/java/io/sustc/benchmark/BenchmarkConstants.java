@@ -5,7 +5,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = lombok.AccessLevel.PRIVATE)
 public final class BenchmarkConstants {
 
-    public static final String IMPORT_DATA_PATH = "big";
+    public static final String IMPORT_DATA_PATH = "small";
 
     public static final String DANMU_FILENAME = "DanmuRecord.ser";
 
