@@ -28,8 +28,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
-@Service
 @EnableAsync
+@Service
 @Slf4j
 public class DatabaseServiceImpl implements DatabaseService {
 
@@ -77,17 +77,18 @@ public class DatabaseServiceImpl implements DatabaseService {
         return getBv(avCount);
     }
 
-    private String escape(String input) {
-        if (input == null)
-            return null;
-        return input.replace("\t", "\\t")
-                .replace("\n", "\\n");
-    }
-
+    @SuppressWarnings("SpringJavaInjectionPointsAutowiringInspection")
     @Autowired
     public DatabaseServiceImpl(DataSource dataSource) {
         this.jdbcTemplate = new JdbcTemplate(dataSource);
         this.lastUpdateTime = null;
+    }
+
+    private String escape(String input) {
+        if (input == null)
+            return "";
+        return input.replace("\t", "\\t")
+                .replace("\n", "\\n");
     }
 
     @Override
@@ -192,9 +193,9 @@ public class DatabaseServiceImpl implements DatabaseService {
             }
             copyData.append(user.getMid()).append('\t')
                     .append(escape(user.getName())).append('\t')
-                    .append(user.getSex()).append('\t')
-                    .append(isEmpty ? null : matcher.group(1)).append('\t')
-                    .append(isEmpty ? null : matcher.group(2)).append('\t')
+                    .append(user.getSex() == null ? "" : user.getSex()).append('\t')
+                    .append(isEmpty ? "" : matcher.group(1)).append('\t')
+                    .append(isEmpty ? "" : matcher.group(2)).append('\t')
                     .append(user.getLevel()).append('\t')
                     .append(user.getCoin()).append('\t')
                     .append(escapeSign).append('\t')
@@ -1537,8 +1538,8 @@ public class DatabaseServiceImpl implements DatabaseService {
         String sql = """
                 SELECT bv
                 FROM PublicVideo
-                ORDER BY relevance DESC, view_count DESC
                 WHERE relevance > 0
+                ORDER BY relevance DESC, view_count DESC
                 LIMIT ?
                 OFFSET ?;
                 """;
