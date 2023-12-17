@@ -168,20 +168,26 @@ public class DatabaseServiceImpl implements DatabaseService {
             Matcher matcher = pattern.matcher(birthday);
             boolean isEmpty = birthday.isEmpty();
             if (!isEmpty && !matcher.matches()) {
+                log.info("User mid: {}", user.getMid());
                 log.error("Invalid birthday: {}", user.getBirthday());
                 throw new IllegalArgumentException("Invalid birthday");
             }
             if (escaper.escape(user.getName()).length() > MAX_NAME_LENGTH) {
                 log.info("User mid: {}", user.getMid());
                 log.error("Name is too long: {}", user.getName());
-//                throw new IllegalArgumentException("Name is too long");
-                continue;
+                throw new IllegalArgumentException("Name is too long");
             }
-            if (escaper.escape(user.getSign()).length() > MAX_SIGN_LENGTH) {
-                log.info("User mid: {}", user.getMid());
-                log.error("Sign is too long: {}", user.getSign());
-//                throw new IllegalArgumentException("Sign is too long");
-                continue;
+            String escapeSign = escaper.escape(user.getSign());
+            if (escapeSign.length() > MAX_SIGN_LENGTH) {
+                if (escapeSign.replace("\\n", "").length() < MAX_SIGN_LENGTH) {
+                    escapeSign = escapeSign.replace("\\n", "");
+                    log.info("User mid: {}", user.getMid());
+                    log.warn("User has too sign with \\n: {}", user.getSign());
+                } else {
+                    log.info("User mid: {}", user.getMid());
+                    log.error("Sign is too long: {}", user.getSign());
+                    throw new IllegalArgumentException("Sign is too long");
+                }
             }
             joiner.appendTo(copyData,
                     user.getMid(),
@@ -191,7 +197,7 @@ public class DatabaseServiceImpl implements DatabaseService {
                     isEmpty ? null : matcher.group(2),
                     user.getLevel(),
                     user.getCoin(),
-                    escaper.escape(user.getSign()),
+                    escapeSign,
                     user.getIdentity().name());
             copyData.append('\n');
         }
@@ -229,7 +235,7 @@ public class DatabaseServiceImpl implements DatabaseService {
         String copySql = "COPY UserFollow(follower, followee) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t')";
         Joiner joiner = Joiner.on('\t');
         StringBuilder copyData = new StringBuilder();
-        int count = 0, batchSize = 500000;
+        int count = 0, batchSize = 50000;
         for (UserRecord user : userRecords) {
             for (long followee : user.getFollowing()) {
                 joiner.appendTo(copyData,
@@ -280,9 +286,21 @@ public class DatabaseServiceImpl implements DatabaseService {
         String copySql = "COPY Video(bv, title, owner, commit_time, review_time, public_time, duration, description, reviewer) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t', NULL '', QUOTE E'\\x07', FREEZE)";
         Joiner joiner = Joiner.on('\t');
         StringBuilder copyData = new StringBuilder();
-        int count = 0, batchSize = 100000;
+        int count = 0, batchSize = 10000;
         for (VideoRecord video : videoRecords) {
             avCount = Math.max(avCount, getAv(video.getBv()));
+            if (escaper.escape(video.getTitle()).length() > MAX_TITLE_LENGTH) {
+                log.info("Video bv: {}", video.getBv());
+                log.info("Title's length: {}", escaper.escape(video.getTitle()).length());
+                log.error("Title is too long: {}", video.getTitle());
+                throw new IllegalArgumentException("Title is too long");
+            }
+            if (escaper.escape(video.getDescription()).length() > MAX_DESCRIPTION_LENGTH) {
+                log.info("Video bv: {}", video.getBv());
+                log.info("Description's length: {}", escaper.escape(video.getDescription()).length());
+                log.error("Description is too long: {}", video.getDescription());
+                throw new IllegalArgumentException("Description is too long");
+            }
             joiner.appendTo(copyData,
                     video.getBv(),
                     escaper.escape(video.getTitle()),
@@ -339,7 +357,7 @@ public class DatabaseServiceImpl implements DatabaseService {
         String copySql = "COPY CountVideo(bv, like_count, coin_count, fav_count, view_count, view_rate, danmu_count, score) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t', FREEZE)";
         Joiner joiner = Joiner.on('\t');
         StringBuilder copyData = new StringBuilder();
-        int count = 0, batchSize = 100000;
+        int count = 0, batchSize = 10000;
         Map<String, Long> danmuCounts = danmuRecords.stream()
                 .collect(Collectors.groupingBy(DanmuRecord::getBv, Collectors.counting()));
         for (VideoRecord video : videoRecords) {
@@ -437,7 +455,7 @@ public class DatabaseServiceImpl implements DatabaseService {
         String copySql = "COPY LikeVideo(mid, bv) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t')";
         Joiner joiner = Joiner.on('\t');
         StringBuilder copyData = new StringBuilder();
-        int count = 0, batchSize = 500000;
+        int count = 0, batchSize = 50000;
         for (VideoRecord video : VideoRecords) {
             String bv = video.getBv();
             for (long mid : video.getLike()) {
@@ -478,7 +496,7 @@ public class DatabaseServiceImpl implements DatabaseService {
         Joiner joiner = Joiner.on('\t');
         String copySql = "COPY CoinVideo(mid, bv) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t')";
         StringBuilder copyData = new StringBuilder();
-        int count = 0, batchSize = 500000;
+        int count = 0, batchSize = 50000;
         for (VideoRecord video : VideoRecords) {
             String bv = video.getBv();
             for (long mid : video.getCoin()) {
@@ -519,7 +537,7 @@ public class DatabaseServiceImpl implements DatabaseService {
         Joiner joiner = Joiner.on('\t');
         String copySql = "COPY FavVideo(mid, bv) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t')";
         StringBuilder copyData = new StringBuilder();
-        int count = 0, batchSize = 500000;
+        int count = 0, batchSize = 50000;
         for (VideoRecord video : videoRecords) {
             String bv = video.getBv();
             for (long mid : video.getFavorite()) {
@@ -560,7 +578,7 @@ public class DatabaseServiceImpl implements DatabaseService {
         Joiner joiner = Joiner.on('\t');
         String copySql = "COPY ViewVideo(mid, bv, view_time) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t')";
         StringBuilder copyData = new StringBuilder();
-        int count = 0, batchSize = 500000;
+        int count = 0, batchSize = 50000;
         for (VideoRecord video : videoRecords) {
             long[] viewerMids = video.getViewerMids();
             String bv = video.getBv();
@@ -641,19 +659,21 @@ public class DatabaseServiceImpl implements DatabaseService {
                     dis_time REAL,
                     content VARCHAR(%d),
                     post_time TIMESTAMP
-                ) PARTITION BY HASH (id);
-                CREATE TABLE Danmu_1 PARTITION OF Danmu FOR VALUES WITH (MODULUS 4, REMAINDER 0);
-                CREATE TABLE Danmu_2 PARTITION OF Danmu FOR VALUES WITH (MODULUS 4, REMAINDER 1);
-                CREATE TABLE Danmu_3 PARTITION OF Danmu FOR VALUES WITH (MODULUS 4, REMAINDER 2);
-                CREATE TABLE Danmu_4 PARTITION OF Danmu FOR VALUES WITH (MODULUS 4, REMAINDER 3);
+                );
                 """, MAX_BV_LENGTH, MAX_CONTENT_LENGTH);
         jdbcTemplate.execute(createDanmuTable);
         Joiner joiner = Joiner.on('\t');
-        String copySql = "COPY Danmu(id, bv, mid, dis_time, content, post_time) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t', QUOTE E'\\x07')";
+        String copySql = "COPY Danmu(id, bv, mid, dis_time, content, post_time) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t', QUOTE E'\\x07', FREEZE)";
         StringBuilder copyData = new StringBuilder();
-        int count = 0, batchSize = 100000, danmuId = 0;
+        int count = 0, batchSize = 10000, danmuId = 0;
         for (DanmuRecord danmu : danmuRecords) {
             danmuId++;
+            if (escaper.escape(danmu.getContent()).length() > MAX_CONTENT_LENGTH) {
+                log.info("Danmu id: {}", danmuId);
+                log.info("Content's length: {}", escaper.escape(danmu.getContent()).length());
+                log.error("Content is too long: {}", danmu.getContent());
+                throw new IllegalArgumentException("Content is too long.");
+            }
             joiner.appendTo(copyData,
                     danmuId,
                     danmu.getBv(),
@@ -710,7 +730,7 @@ public class DatabaseServiceImpl implements DatabaseService {
         Joiner joiner = Joiner.on('\t');
         String copySql = "COPY LikeDanmu(mid, id) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t')";
         StringBuilder copyData = new StringBuilder();
-        int count = 0, batchSize = 500000, danmuID = 0;
+        int count = 0, batchSize = 50000, danmuID = 0;
         for (DanmuRecord danmu : danmuRecords) {
             danmuID++;
             for (long mid : danmu.getLikedBy()) {
@@ -808,7 +828,7 @@ public class DatabaseServiceImpl implements DatabaseService {
     }
 
     @Override
-    @Transactional(propagation = Propagation.NESTED)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void importData(
             List<DanmuRecord> danmuRecords,
             List<UserRecord> userRecords,
@@ -820,18 +840,23 @@ public class DatabaseServiceImpl implements DatabaseService {
         log.info("Begin importing at " + new Timestamp(new Date().getTime()));
 
         String createIdentityEnum = """
-                CREATE TYPE Identity AS ENUM (
-                    'USER',
-                    'SUPERUSER'
-                );
+                DO $$
+                  BEGIN
+                      IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'identity') THEN
+                          CREATE TYPE Identity AS ENUM ('USER', 'SUPERUSER');
+                      END IF;
+                  END
+                  $$;
                 """;
         jdbcTemplate.execute(createIdentityEnum);
         String createGenderEnum = """
-                CREATE TYPE Gender AS ENUM (
-                    'MALE',
-                    'FEMALE',
-                    'UNKNOWN'
-                );
+                DO $$
+                  BEGIN
+                      IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'gender') THEN
+                          CREATE TYPE Gender AS ENUM ('MALE', 'FEMALE', 'UNKNOWN');
+                      END IF;
+                  END
+                  $$;
                 """;
         jdbcTemplate.execute(createGenderEnum);
 
@@ -908,8 +933,16 @@ public class DatabaseServiceImpl implements DatabaseService {
     }
 
     @Override
-    @Transactional(propagation = Propagation.NESTED)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void truncate() {
+        if (ALLOW_TRUNCATE)
+            truncating();
+        else
+            log.info("Do not truncate.");
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void truncating() {
         String sql = """
                 DO $$
                 DECLARE
