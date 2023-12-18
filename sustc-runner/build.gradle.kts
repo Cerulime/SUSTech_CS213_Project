@@ -15,8 +15,8 @@ dependencies {
     )
     runtimeOnly("org.postgresql:postgresql")
     implementation("com.opencsv:opencsv:latest.release")
-    implementation("commons-io:commons-io:latest.release")
-    implementation("org.furyio:fury-core:latest.release")
+    implementation("commons-io:commons-io:2.15.0")
+    implementation("org.furyio:fury-core:0.3.1")
 
     implementation(platform("org.springframework.shell:spring-shell-dependencies:2.1.13"))
     implementation("org.springframework.shell:spring-shell-starter")

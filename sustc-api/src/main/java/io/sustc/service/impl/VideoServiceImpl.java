@@ -67,8 +67,7 @@ public class VideoServiceImpl implements VideoService {
         long owner = databaseService.getVideoOwner(bv);
         if (owner < 0 || owner != auth.getMid())
             return false;
-        PostVideoReq origin = databaseService.getVideoReq(bv);
-        if (origin.equals(req) || origin.getDuration() != req.getDuration())
+        if (databaseService.isNewInfoValid(bv, req))
             return false;
         return databaseService.updateVideoInfo(bv, req);
     }
@@ -80,7 +79,7 @@ public class VideoServiceImpl implements VideoService {
             return null;
         if (lastKeywords == null)
             databaseService.createUnloggedTable(auth.getMid());
-        List<String> keyword = Arrays.stream(keywords.split(" "))
+        List<String> keyword = Arrays.stream(keywords.replace("\t", "").split(" "))
                 .filter(s -> !s.isEmpty()).sorted().collect(Collectors.toList());
         if (keyword.equals(lastKeywords)) {
             databaseService.updateUnloggedTable(auth.getMid());

@@ -77,7 +77,6 @@ public class DatabaseServiceImpl implements DatabaseService {
         return getBv(avCount);
     }
 
-    @SuppressWarnings("SpringJavaInjectionPointsAutowiringInspection")
     @Autowired
     public DatabaseServiceImpl(DataSource dataSource) {
         this.jdbcTemplate = new JdbcTemplate(dataSource);
@@ -174,7 +173,8 @@ public class DatabaseServiceImpl implements DatabaseService {
                 log.error("Invalid birthday: {}", user.getBirthday());
                 throw new IllegalArgumentException("Invalid birthday");
             }
-            if (escape(user.getName()).length() > MAX_NAME_LENGTH) {
+            String escapeName = escape(user.getName());
+            if (escapeName.length() > MAX_NAME_LENGTH) {
                 log.info("User mid: {}", user.getMid());
                 log.error("Name is too long: {}", user.getName());
                 throw new IllegalArgumentException("Name is too long");
@@ -192,7 +192,7 @@ public class DatabaseServiceImpl implements DatabaseService {
                 }
             }
             copyData.append(user.getMid()).append('\t')
-                    .append(escape(user.getName())).append('\t')
+                    .append(escapeName).append('\t')
                     .append(user.getSex() == null ? "" : user.getSex()).append('\t')
                     .append(isEmpty ? "" : matcher.group(1)).append('\t')
                     .append(isEmpty ? "" : matcher.group(2)).append('\t')
@@ -284,26 +284,28 @@ public class DatabaseServiceImpl implements DatabaseService {
         int count = 0, batchSize = 10000;
         for (VideoRecord video : videoRecords) {
             avCount = Math.max(avCount, getAv(video.getBv()));
-            if (escape(video.getTitle()).length() > MAX_TITLE_LENGTH) {
+            String escapeTitle = escape(video.getTitle());
+            if (escapeTitle.length() > MAX_TITLE_LENGTH) {
                 log.info("Video bv: {}", video.getBv());
-                log.info("Title's length: {}", escape(video.getTitle()).length());
+                log.info("Title's length: {}", escapeTitle.length());
                 log.error("Title is too long: {}", video.getTitle());
                 throw new IllegalArgumentException("Title is too long");
             }
-            if (escape(video.getDescription()).length() > MAX_DESCRIPTION_LENGTH) {
+            String escapeDescription = escape(video.getDescription());
+            if (escapeDescription.length() > MAX_DESCRIPTION_LENGTH) {
                 log.info("Video bv: {}", video.getBv());
-                log.info("Description's length: {}", escape(video.getDescription()).length());
+                log.info("Description's length: {}", escapeDescription.length());
                 log.error("Description is too long: {}", video.getDescription());
                 throw new IllegalArgumentException("Description is too long");
             }
             copyData.append(video.getBv()).append('\t')
-                    .append(escape(video.getTitle())).append('\t')
+                    .append(escapeTitle).append('\t')
                     .append(video.getOwnerMid()).append('\t')
                     .append(video.getCommitTime()).append('\t')
                     .append(video.getReviewTime()).append('\t')
                     .append(video.getPublicTime()).append('\t')
                     .append(video.getDuration()).append('\t')
-                    .append(escape(video.getDescription())).append('\t')
+                    .append(escapeDescription).append('\t')
                     .append(video.getReviewer() == 0 ? "" : video.getReviewer()).append('\n');
             count++;
             if (count >= batchSize) {
@@ -1009,7 +1011,7 @@ public class DatabaseServiceImpl implements DatabaseService {
     public boolean isNameExist(String name) {
         String sql = "SELECT mid FROM UserProfile WHERE name = ?";
         try {
-            return jdbcTemplate.queryForObject(sql, Long.class, name) != null;
+            return jdbcTemplate.queryForObject(sql, Long.class, escape(name)) != null;
         } catch (EmptyResultDataAccessException e) {
             return false;
         }
@@ -1025,10 +1027,27 @@ public class DatabaseServiceImpl implements DatabaseService {
                 req.getWechat());
         if (mid == null)
             return -1;
+        String escapeName = escape(req.getName());
+        if (escapeName.length() > MAX_NAME_LENGTH) {
+            log.info("Mid: {}", mid);
+            log.info("Name's length: {}", escapeName.length());
+            log.error("Name is too long: {}", req.getName());
+            throw new IllegalArgumentException("Name is too long");
+        }
         Pattern pattern = Pattern.compile("(\\d{1,2})月(\\d{1,2})日");
-        Matcher matcher = pattern.matcher(req.getBirthday());
+        String birthday = req.getBirthday();
+        Matcher matcher = pattern.matcher(birthday);
+        String birthday_month = birthday.isEmpty() ? null : matcher.group(1);
+        String birthday_day = birthday.isEmpty() ? null : matcher.group(2);
+        String escapeSign = escape(req.getSign());
+        if (escapeSign.length() > MAX_SIGN_LENGTH) {
+            log.info("Mid: {}", mid);
+            log.info("Sign's length: {}", escapeSign.length());
+            log.error("Sign is too long: {}", req.getSign());
+            throw new IllegalArgumentException("Sign is too long");
+        }
         sql = "INSERT INTO UserProfile(mid, name, sex, birthday_month, birthday_day, level, coin, sign, identity) VALUES (?, ?, ?, ?, 1, 0, ?, ?::Identity)";
-        jdbcTemplate.update(sql, mid, req.getName(), req.getSex(), Integer.parseInt(matcher.group(1)), Integer.parseInt(matcher.group(2)), req.getSign(), UserRecord.Identity.USER.name());
+        jdbcTemplate.update(sql, mid, escapeName, req.getSex(), birthday_month, birthday_day, escapeSign, UserRecord.Identity.USER.name());
         return mid;
     }
 
@@ -1376,9 +1395,10 @@ public class DatabaseServiceImpl implements DatabaseService {
 
     @Override
     public boolean isSameVideoExist(long mid, String title) {
+        String escapeTitle = escape(title);
         String sql = "SELECT bv FROM Video WHERE owner = ? AND title = ?";
         try {
-            return jdbcTemplate.queryForObject(sql, String.class, mid, title) != null;
+            return jdbcTemplate.queryForObject(sql, String.class, mid, escapeTitle) != null;
         } catch (EmptyResultDataAccessException e) {
             return false;
         }
@@ -1387,9 +1407,23 @@ public class DatabaseServiceImpl implements DatabaseService {
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public String insertVideo(long mid, PostVideoReq req) {
+        String escapeTitle = escape(req.getTitle());
+        if (escapeTitle.length() > MAX_TITLE_LENGTH) {
+            log.info("Mid: {}", mid);
+            log.info("Title's length: {}", escapeTitle.length());
+            log.error("Title is too long: {}", req.getTitle());
+            throw new IllegalArgumentException("Title is too long");
+        }
+        String escapeDescription = escape(req.getDescription());
+        if (escapeDescription.length() > MAX_DESCRIPTION_LENGTH) {
+            log.info("Mid: {}", mid);
+            log.info("Description's length: {}", escapeDescription.length());
+            log.error("Description is too long: {}", req.getDescription());
+            throw new IllegalArgumentException("Description is too long");
+        }
         String sql = "INSERT INTO Video(bv, title, owner, commit_time, duration, description) VALUES (?, ?, ?, LOCALTIMESTAMP, ?, ?)";
         String bv = generateBV();
-        jdbcTemplate.update(sql, bv, req.getTitle(), mid, req.getDuration(), req.getDescription());
+        jdbcTemplate.update(sql, bv, escapeTitle, mid, req.getDuration(), escapeDescription);
         return bv;
     }
 
@@ -1401,25 +1435,28 @@ public class DatabaseServiceImpl implements DatabaseService {
     }
 
     @Override
-    public PostVideoReq getVideoReq(String bv) {
+    public boolean isNewInfoValid(String bv, PostVideoReq req) {
         String sql = "SELECT title, duration, description, public_time FROM Video WHERE bv = ?";
-        try {
-            return jdbcTemplate.queryForObject(sql, (rs, rowNum) -> PostVideoReq.builder()
-                    .title(rs.getString("title").replace("\\n", "\n").replace("\\t", "\t"))
-                    .duration(rs.getFloat("duration"))
-                    .description(rs.getString("description").replace("\\n", "\n").replace("\\t", "\t"))
-                    .publicTime(rs.getTimestamp("public_time"))
-                    .build(), bv);
-        } catch (EmptyResultDataAccessException e) {
-            return null;
-        }
+        PostVideoReq origin = jdbcTemplate.queryForObject(sql, (rs, rowNum) -> PostVideoReq.builder()
+                .title(rs.getString("title"))
+                .duration(rs.getFloat("duration"))
+                .description(rs.getString("description"))
+                .publicTime(rs.getTimestamp("public_time"))
+                .build(), bv);
+        PostVideoReq escapeReq = PostVideoReq.builder()
+                .title(escape(req.getTitle()))
+                .duration(req.getDuration())
+                .description(escape(req.getDescription()))
+                .publicTime(req.getPublicTime()).build();
+        assert origin != null;
+        return !origin.equals(escapeReq) && origin.getDuration() == req.getDuration();
     }
 
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public boolean updateVideoInfo(String bv, PostVideoReq req) {
         String sql = "UPDATE Video SET title = ?, duration = ?, description = ?, public_time = ?, reviewer = NULL, review_time = NULL WHERE bv = ?";
-        return jdbcTemplate.update(sql, req.getTitle(), req.getDuration(), req.getDescription(), req.getPublicTime(), bv) > 0;
+        return jdbcTemplate.update(sql, escape(req.getTitle()), req.getDuration(), escape(req.getDescription()), req.getPublicTime(), bv) > 0;
     }
 
     @SuppressWarnings("DuplicatedCode")

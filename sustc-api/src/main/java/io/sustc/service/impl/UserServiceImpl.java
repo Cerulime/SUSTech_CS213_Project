@@ -29,11 +29,11 @@ public class UserServiceImpl implements UserService {
         if (!req.isValid())
             return -1;
         if (req.getQq() != null && req.getQq().length() > DatabaseService.MAX_QQ_LENGTH) {
-            log.warn("QQ is too long: {}", req.getQq());
+            log.error("QQ is too long: {}", req.getQq());
             return -1;
         }
         if (req.getWechat() != null && req.getWechat().length() > DatabaseService.MAX_WECHAT_LENGTH) {
-            log.warn("WeChat is too long: {}", req.getWechat());
+            log.error("WeChat is too long: {}", req.getWechat());
             return -1;
         }
         if ((req.getQq() != null && !req.getQq().isEmpty()) ||

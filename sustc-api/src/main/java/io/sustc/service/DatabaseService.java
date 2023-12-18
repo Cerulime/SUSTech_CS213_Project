@@ -172,7 +172,7 @@ public interface DatabaseService {
 
     boolean deleteVideo(String bv);
 
-    PostVideoReq getVideoReq(String bv);
+    boolean isNewInfoValid(String bv, PostVideoReq req);
 
     boolean updateVideoInfo(String bv, PostVideoReq req);
 
