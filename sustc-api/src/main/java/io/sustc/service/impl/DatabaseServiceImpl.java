@@ -92,24 +92,30 @@ public class DatabaseServiceImpl implements DatabaseService {
 
         jdbcTemplate.execute(config);
 
-        CompletableFuture<Void> future1 = asyncInitTable.initUserAuthTable(userRecords);
+        CompletableFuture<Void> future1 = asyncInitTable.initUserAuthTableAsync(userRecords);
         CompletableFuture<Void> future2 = future1.thenComposeAsync(aVoid -> CompletableFuture.allOf(
-                asyncInitTable.initUserProfileTable(userRecords),
-                asyncInitTable.initUserFollowTable(userRecords),
-                asyncInitTable.initVideoTable(videoRecords)
+                asyncInitTable.initUserProfileTableAsync(userRecords),
+                asyncInitTable.initUserFollowTableAsync(userRecords)
         ));
-        CompletableFuture<Void> future3 = future2.thenComposeAsync(aVoid -> CompletableFuture.allOf(
-                asyncInitTable.initDanmuTable(danmuRecords),
-                asyncInitTable.initCountVideoTable(videoRecords, danmuRecords),
-                asyncInitTable.initLikeVideoTable(videoRecords),
-                asyncInitTable.initCoinVideoTable(videoRecords),
-                asyncInitTable.initFavVideoTable(videoRecords),
-                asyncInitTable.initViewVideoTable(videoRecords)
+        CompletableFuture<Void> future3 = future1.thenComposeAsync(aVoid -> CompletableFuture.allOf(
+                asyncInitTable.initVideoTableAsync(videoRecords)
         ));
-        CompletableFuture<Void> future4 = future3.thenComposeAsync(aVoid ->
-                asyncInitTable.initLikeDanmuTable(danmuRecords)
+        CompletableFuture<Void> future4 = future3.thenComposeAsync(aVoid -> CompletableFuture.allOf(
+                asyncInitTable.initCountVideoTableAsync(videoRecords, danmuRecords),
+                asyncInitTable.initViewVideoTableAsync(videoRecords),
+                asyncInitTable.initLikeVideoTableAsync(videoRecords),
+                asyncInitTable.initFavVideoTableAsync(videoRecords),
+                asyncInitTable.initCoinVideoTableAsync(videoRecords)
+        ));
+        CompletableFuture<Void> future5 = future3.thenComposeAsync(aVoid -> CompletableFuture.allOf(
+                asyncInitTable.initDanmuTableAsync(danmuRecords)
+        ));
+        CompletableFuture<Void> future6 = future5.thenComposeAsync(aVoid ->
+                asyncInitTable.initLikeDanmuTableAsync(danmuRecords)
         );
+        future2.join();
         future4.join();
+        future6.join();
 
         createGetHotspotFunction();
 

@@ -11,6 +11,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Async;
+import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,6 +29,7 @@ import java.util.stream.Collectors;
 import static io.sustc.service.DatabaseService.*;
 
 @Service
+@EnableAsync
 @Slf4j
 public class AsyncInitTable {
     private final JdbcTemplate jdbcTemplate;
@@ -48,7 +50,11 @@ public class AsyncInitTable {
 
     @Async
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public CompletableFuture<Void> initUserAuthTable(List<UserRecord> userRecords) {
+    public CompletableFuture<Void> initUserAuthTableAsync(List<UserRecord> userRecords) {
+        return CompletableFuture.runAsync(() -> initUserAuthTable(userRecords));
+    }
+
+    public void initUserAuthTable(List<UserRecord> userRecords) {
         String createUserAuthTable = String.format("""
                 CREATE TABLE IF NOT EXISTS UserAuth (
                     mid BIGSERIAL,
@@ -97,12 +103,15 @@ public class AsyncInitTable {
                 """;
         jdbcTemplate.execute(createUserAuthTableConstraint);
         log.info("Finish initializing UserAuth table");
-        return CompletableFuture.completedFuture(null);
     }
 
     @Async
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public CompletableFuture<Void> initUserProfileTable(List<UserRecord> userRecords) {
+    public CompletableFuture<Void> initUserProfileTableAsync(List<UserRecord> userRecords) {
+        return CompletableFuture.runAsync(() -> initUserProfileTable(userRecords));
+    }
+
+    public void initUserProfileTable(List<UserRecord> userRecords) {
         String createUserProfileTable = String.format("""
                 CREATE TABLE IF NOT EXISTS UserProfile(
                     mid BIGINT,
@@ -173,12 +182,15 @@ public class AsyncInitTable {
                 """;
         jdbcTemplate.execute(createUserProfileTableConstraint);
         log.info("Finish initializing UserProfile table");
-        return CompletableFuture.completedFuture(null);
     }
 
     @Async
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public CompletableFuture<Void> initUserFollowTable(List<UserRecord> userRecords) {
+    public CompletableFuture<Void> initUserFollowTableAsync(List<UserRecord> userRecords) {
+        return CompletableFuture.runAsync(() -> initUserFollowTable(userRecords));
+    }
+
+    public void initUserFollowTable(List<UserRecord> userRecords) {
         String createUserFollowTable = """
                 CREATE TABLE IF NOT EXISTS UserFollow(
                     follower BIGINT,
@@ -220,12 +232,15 @@ public class AsyncInitTable {
                 """;
         jdbcTemplate.execute(createUserFollowTableConstraint);
         log.info("Finish initializing UserFollow table");
-        return CompletableFuture.completedFuture(null);
     }
 
     @Async
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public CompletableFuture<Void> initVideoTable(List<VideoRecord> videoRecords) {
+    public CompletableFuture<Void> initVideoTableAsync(List<VideoRecord> videoRecords) {
+        return CompletableFuture.runAsync(() -> initVideoTable(videoRecords));
+    }
+
+    public void initVideoTable(List<VideoRecord> videoRecords) {
         String createVideoTable = String.format("""
                 CREATE TABLE IF NOT EXISTS Video(
                     bv CHAR(%d),
@@ -293,12 +308,15 @@ public class AsyncInitTable {
                 """;
         jdbcTemplate.execute(createVideoTableConstraint);
         log.info("Finish initializing Video table");
-        return CompletableFuture.completedFuture(null);
     }
 
     @Async
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public CompletableFuture<Void> initCountVideoTable(List<VideoRecord> videoRecords, List<DanmuRecord> danmuRecords) {
+    public CompletableFuture<Void> initCountVideoTableAsync(List<VideoRecord> videoRecords, List<DanmuRecord> danmuRecords) {
+        return CompletableFuture.runAsync(() -> initCountVideoTable(videoRecords, danmuRecords));
+    }
+
+    public void initCountVideoTable(List<VideoRecord> videoRecords, List<DanmuRecord> danmuRecords) {
         String createCountVideoTable = String.format("""
                 CREATE TABLE IF NOT EXISTS CountVideo(
                     bv CHAR(%d),
@@ -394,13 +412,16 @@ public class AsyncInitTable {
                 """;
         jdbcTemplate.execute(setTrigger);
         log.info("Finish initializing CountVideo table");
-        return CompletableFuture.completedFuture(null);
+    }
+
+    @Async
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public CompletableFuture<Void> initLikeVideoTableAsync(List<VideoRecord> VideoRecords) {
+        return CompletableFuture.runAsync(() -> initLikeVideoTable(VideoRecords));
     }
 
     @SuppressWarnings("DuplicatedCode")
-    @Async
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public CompletableFuture<Void> initLikeVideoTable(List<VideoRecord> VideoRecords) {
+    public void initLikeVideoTable(List<VideoRecord> VideoRecords) {
         String createLikeVideoTable = String.format("""
                 CREATE TABLE IF NOT EXISTS LikeVideo(
                     mid BIGINT,
@@ -434,13 +455,16 @@ public class AsyncInitTable {
         setVideoConstraint("Like");
         setTriggers("like", "LikeVideo");
         log.info("Finish initializing LikeVideo table");
-        return CompletableFuture.completedFuture(null);
+    }
+
+    @Async
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public CompletableFuture<Void> initCoinVideoTableAsync(List<VideoRecord> VideoRecords) {
+        return CompletableFuture.runAsync(() -> initCoinVideoTable(VideoRecords));
     }
 
     @SuppressWarnings("DuplicatedCode")
-    @Async
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public CompletableFuture<Void> initCoinVideoTable(List<VideoRecord> VideoRecords) {
+    public void initCoinVideoTable(List<VideoRecord> VideoRecords) {
         String createCoinVideoTable = String.format("""
                 CREATE TABLE IF NOT EXISTS CoinVideo(
                     mid BIGINT,
@@ -474,13 +498,16 @@ public class AsyncInitTable {
         setVideoConstraint("Coin");
         setTriggers("coin", "CoinVideo");
         log.info("Finish initializing CoinVideo table");
-        return CompletableFuture.completedFuture(null);
+    }
+
+    @Async
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public CompletableFuture<Void> initFavVideoTableAsync(List<VideoRecord> videoRecords) {
+        return CompletableFuture.runAsync(() -> initFavVideoTable(videoRecords));
     }
 
     @SuppressWarnings("DuplicatedCode")
-    @Async
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public CompletableFuture<Void> initFavVideoTable(List<VideoRecord> videoRecords) {
+    public void initFavVideoTable(List<VideoRecord> videoRecords) {
         String createFavVideoTable = String.format("""
                 CREATE TABLE IF NOT EXISTS FavVideo(
                     mid BIGINT,
@@ -514,12 +541,15 @@ public class AsyncInitTable {
         setVideoConstraint("Fav");
         setTriggers("fav", "FavVideo");
         log.info("Finish initializing FavVideo table");
-        return CompletableFuture.completedFuture(null);
     }
 
     @Async
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public CompletableFuture<Void> initViewVideoTable(List<VideoRecord> videoRecords) {
+    public CompletableFuture<Void> initViewVideoTableAsync(List<VideoRecord> videoRecords) {
+        return CompletableFuture.runAsync(() -> initViewVideoTable(videoRecords));
+    }
+
+    public void initViewVideoTable(List<VideoRecord> videoRecords) {
         String createViewVideoTable = String.format("""
                 CREATE TABLE IF NOT EXISTS ViewVideo(
                     mid BIGINT,
@@ -604,12 +634,15 @@ public class AsyncInitTable {
                 """;
         jdbcTemplate.execute(setTriggers);
         log.info("Finish initializing ViewVideo table");
-        return CompletableFuture.completedFuture(null);
     }
 
     @Async
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public CompletableFuture<Void> initDanmuTable(List<DanmuRecord> danmuRecords) {
+    public CompletableFuture<Void> initDanmuTableAsync(List<DanmuRecord> danmuRecords) {
+        return CompletableFuture.runAsync(() -> initDanmuTable(danmuRecords));
+    }
+
+    public void initDanmuTable(List<DanmuRecord> danmuRecords) {
         String createDanmuTable = String.format("""
                 CREATE TABLE IF NOT EXISTS Danmu(
                     id BIGSERIAL,
@@ -667,13 +700,16 @@ public class AsyncInitTable {
         jdbcTemplate.execute(createDanmuTableConstraint);
         setTriggers("danmu", "Danmu");
         log.info("Finish initializing Danmu table");
-        return CompletableFuture.completedFuture(null);
+    }
+
+    @Async
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public CompletableFuture<Void> initLikeDanmuTableAsync(List<DanmuRecord> danmuRecords) {
+        return CompletableFuture.runAsync(() -> initLikeDanmuTable(danmuRecords));
     }
 
     @SuppressWarnings("DuplicatedCode")
-    @Async
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public CompletableFuture<Void> initLikeDanmuTable(List<DanmuRecord> danmuRecords) {
+    public void initLikeDanmuTable(List<DanmuRecord> danmuRecords) {
         String createLikeDanmuTable = """
                 CREATE TABLE IF NOT EXISTS LikeDanmu(
                     mid BIGINT,
@@ -713,10 +749,9 @@ public class AsyncInitTable {
                 """;
         jdbcTemplate.execute(createLikeDanmuTableConstraint);
         log.info("Finish initializing LikeDanmu table");
-        return CompletableFuture.completedFuture(null);
     }
 
-    @Transactional(propagation = Propagation.MANDATORY)
+    //    @Transactional(propagation = Propagation.MANDATORY)
     public void copyInsertion(String copyData, String copySql) {
         jdbcTemplate.execute((ConnectionCallback<Long>) connection -> {
             var copyManager = new CopyManager(connection.unwrap(BaseConnection.class));
@@ -728,7 +763,7 @@ public class AsyncInitTable {
         });
     }
 
-    @Transactional(propagation = Propagation.MANDATORY)
+    //    @Transactional(propagation = Propagation.MANDATORY)
     public void setTriggers(String type, String table) {
         String setTriggers = """
                 CREATE OR REPLACE FUNCTION increase_${TYPE}_count()
@@ -767,7 +802,7 @@ public class AsyncInitTable {
         jdbcTemplate.execute(setTriggers);
     }
 
-    @Transactional(propagation = Propagation.MANDATORY)
+    //    @Transactional(propagation = Propagation.MANDATORY)
     public void setVideoConstraint(String table) {
         String setVideoConstrain = """
                 ALTER TABLE ${TABLE}Video ADD PRIMARY KEY (mid, bv);
