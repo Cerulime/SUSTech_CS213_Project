@@ -133,18 +133,16 @@ public class DatabaseServiceImpl implements DatabaseService {
                 DECLARE
                     max_count INT;
                 BEGIN
+                    RETURN QUERY
                     WITH BvCount AS (
-                        SELECT FLOOR(dis_time / 10) AS chunk, COUNT(*) AS count
+                        SELECT FLOOR(dis_time / 10)::integer AS chunk, COUNT(id) AS count
                         FROM Danmu
                         WHERE bv = bv_value
-                        GROUP BY FLOOR(dis_time / 10)
+                        GROUP BY chunk
                     )
-                    SELECT INTO max_count MAX(count) FROM BvCount;
-                    
-                    RETURN QUERY
                     SELECT chunk AS hotspot
                     FROM BvCount
-                    WHERE count = max_count;
+                    WHERE count = (SELECT MAX(count) FROM BvCount);
                 END;
                 $$ LANGUAGE plpgsql;
                 """
@@ -602,6 +600,8 @@ public class DatabaseServiceImpl implements DatabaseService {
 
     @Override
     public long getVideoOwner(String bv) {
+        if (bv == null || bv.isEmpty())
+            return -1;
         String sql = "SELECT owner FROM Video WHERE bv = ?";
         return Optional.ofNullable(jdbcTemplate.queryForObject(sql, Long.class, bv)).orElse(-1L);
     }
@@ -636,13 +636,20 @@ public class DatabaseServiceImpl implements DatabaseService {
     }
 
     @Override
-    public double getVideoViewTime(String bv) {
-        String sql = "SELECT SUM(view_time::DOUBLE PRECISION) FROM ViewVideo WHERE bv = ?";
+    public double getAverageViewRate(String bv) {
+        String sql = "SELECT view_count, view_rate FROM CountVideo WHERE bv = ?";
+        int view_count;
+        double view_rate;
         try {
-            return Optional.ofNullable(jdbcTemplate.queryForObject(sql, Double.class, bv)).orElse(-1d);
+            Map<String, Object> map = jdbcTemplate.queryForMap(sql, bv);
+            view_count = (int) map.get("view_count");
+            view_rate = (double) map.get("view_rate");
         } catch (EmptyResultDataAccessException e) {
-            return -1d;
+            return -1;
         }
+        if (view_count == 0)
+            return -1;
+        return view_rate / view_count;
     }
 
     @Override

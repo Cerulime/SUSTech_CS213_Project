@@ -99,10 +99,7 @@ public class VideoServiceImpl implements VideoService {
         float duration = databaseService.getValidVideoDuration(bv);
         if (duration < 0)
             return -1;
-        double viewTime = databaseService.getVideoViewTime(bv);
-        if (viewTime < 0)
-            return -1;
-        return viewTime / duration;
+        return databaseService.getAverageViewRate(bv);
     }
 
     @Override

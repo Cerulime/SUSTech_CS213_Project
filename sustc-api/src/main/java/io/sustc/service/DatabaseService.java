@@ -164,7 +164,7 @@ public interface DatabaseService {
 
     Set<Integer> getHotspot(String bv);
 
-    double getVideoViewTime(String bv);
+    double getAverageViewRate(String bv);
 
     boolean isSameVideoExist(long mid, String title);
 
