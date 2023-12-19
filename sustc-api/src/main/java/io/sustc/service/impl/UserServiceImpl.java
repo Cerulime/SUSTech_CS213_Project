@@ -26,8 +26,10 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional
     public long register(RegisterUserReq req) {
-        if (!req.isValid())
+        if (!req.isValid()) {
+            log.warn("Invalid register request: {}", req);
             return -1;
+        }
         if (req.getQq() != null && req.getQq().length() > DatabaseService.MAX_QQ_LENGTH) {
             log.error("QQ is too long: {}", req.getQq());
             return -1;
@@ -38,10 +40,14 @@ public class UserServiceImpl implements UserService {
         }
         if ((req.getQq() != null && !req.getQq().isEmpty()) ||
                 (req.getWechat() != null && !req.getWechat().isEmpty()))
-            if (databaseService.isQQorWechatExist(req.getQq(), req.getWechat()))
+            if (databaseService.isQQorWechatExist(req.getQq(), req.getWechat())) {
+                log.warn("QQ or WeChat already exists: {} {}", req.getQq(), req.getWechat());
                 return -1;
-        if (databaseService.isNameExist(req.getName()))
+            }
+        if (databaseService.isNameExist(req.getName())) {
+            log.warn("Name already exists: {}", req.getName());
             return -1;
+        }
         return databaseService.insertUser(req);
     }
 
@@ -69,30 +75,39 @@ public class UserServiceImpl implements UserService {
         }
         if (QqData != null && WechatData != null)
             return !QqData.equals(WechatData);
+        log.warn("Invalid auth info: {}", auth);
         return false;
     }
 
     @Override
     @Transactional
     public boolean deleteAccount(AuthInfo auth, long mid) {
-        if (invalidAuthInfo(auth) || databaseService.isMidNotExist(mid))
+        if (invalidAuthInfo(auth) || databaseService.isMidNotExist(mid)) {
+            log.warn("Can not delete: {}", mid);
             return false;
+        }
         UserRecord.Identity authIdentity = databaseService.getUserIdentity(auth.getMid());
         UserRecord.Identity midIdentity = databaseService.getUserIdentity(mid);
         if (authIdentity == UserRecord.Identity.USER &&
-                auth.getMid() != mid)
+                auth.getMid() != mid) {
+            log.warn("Insufficient privilege: {}", auth);
             return false;
+        }
         if (authIdentity == UserRecord.Identity.SUPERUSER &&
-                midIdentity == UserRecord.Identity.SUPERUSER && auth.getMid() != mid)
+                midIdentity == UserRecord.Identity.SUPERUSER && auth.getMid() != mid) {
+            log.warn("Insufficient privilege: {}", auth);
             return false;
+        }
         return databaseService.deleteUser(mid);
     }
 
     @Override
     @Transactional
     public boolean follow(AuthInfo auth, long followeeMid) {
-        if (invalidAuthInfo(auth) || databaseService.isMidNotExist(followeeMid))
+        if (invalidAuthInfo(auth) || databaseService.isMidNotExist(followeeMid)) {
+            log.warn("Can not follow: {}", followeeMid);
             return false;
+        }
         boolean isFollowed = databaseService.isFollowing(auth.getMid(), followeeMid);
         if (isFollowed)
             return !databaseService.unfollow(auth.getMid(), followeeMid);
@@ -102,8 +117,10 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public UserInfoResp getUserInfo(long mid) {
-        if (databaseService.isMidNotExist(mid))
+        if (databaseService.isMidNotExist(mid)) {
+            log.warn("Can not find: {}", mid);
             return null;
+        }
         CompletableFuture<long[]> followingFuture = databaseService.getFollowingAsync(mid);
         CompletableFuture<long[]> followerFuture = databaseService.getFollowerAsync(mid);
         CompletableFuture<String[]> watchedFuture = databaseService.getWatchedAsync(mid);

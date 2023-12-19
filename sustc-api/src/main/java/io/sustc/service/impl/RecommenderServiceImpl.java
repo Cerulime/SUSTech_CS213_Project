@@ -24,25 +24,31 @@ public class RecommenderServiceImpl implements RecommenderService {
 
     @Override
     public List<String> recommendNextVideo(String bv) {
-        if (bv == null || bv.isEmpty())
-            return null;
         float duration = databaseService.getValidVideoDuration(bv);
-        if (duration < 0)
+        if (duration < 0) {
+            log.warn("Video {} not found", bv);
             return null;
+        }
         return databaseService.getTopVideos(bv);
     }
 
     @Override
     public List<String> generalRecommendations(int pageSize, int pageNum) {
-        if (pageSize <= 0 || pageNum <= 0)
+        if (pageSize <= 0 || pageNum <= 0) {
+            log.warn("Invalid pageSize {} or pageNum {}", pageSize, pageNum);
             return null;
+        }
         return databaseService.getRecVideos(pageSize, pageNum);
     }
 
     @Override
     public List<String> recommendVideosForUser(AuthInfo auth, int pageSize, int pageNum) {
-        if (userService.invalidAuthInfo(auth) || pageSize <= 0 || pageNum <= 0)
+        if (userService.invalidAuthInfo(auth))
             return null;
+        if (pageSize <= 0 || pageNum <= 0) {
+            log.warn("Invalid pageSize {} or pageNum {}", pageSize, pageNum);
+            return null;
+        }
         if (databaseService.isInterestsExist(auth.getMid()))
             return databaseService.getRecVideosForUser(auth.getMid(), pageSize, pageNum);
         else
@@ -51,8 +57,12 @@ public class RecommenderServiceImpl implements RecommenderService {
 
     @Override
     public List<Long> recommendFriends(AuthInfo auth, int pageSize, int pageNum) {
-        if (userService.invalidAuthInfo(auth) || pageSize <= 0 || pageNum <= 0)
+        if (userService.invalidAuthInfo(auth))
             return null;
+        if (pageSize <= 0 || pageNum <= 0) {
+            log.warn("Invalid pageSize {} or pageNum {}", pageSize, pageNum);
+            return null;
+        }
         return databaseService.getRecFriends(auth.getMid(), pageSize, pageNum);
     }
 }

@@ -26,35 +26,47 @@ public class DanmuServiceImpl implements DanmuService {
     @Override
     @Transactional
     public long sendDanmu(AuthInfo auth, String bv, String content, float time) {
-        if (bv == null || bv.isEmpty() || content == null || content.isEmpty())
-            return -1;
-        if (content.length() > DatabaseService.MAX_CONTENT_LENGTH) {
-            log.warn("Content is too long: {}", content);
+        if (content == null || content.isEmpty()) {
+            log.warn("Content is null or empty: {}", content);
             return -1;
         }
-        if (auth == null || userService.invalidAuthInfo(auth))
+        if (content.length() > DatabaseService.MAX_CONTENT_LENGTH) {
+            log.error("Content is too long: {}", content);
+            return -1;
+        }
+        if (userService.invalidAuthInfo(auth))
             return -1;
         float duration = databaseService.getValidVideoDuration(bv);
-        if (duration < 0)
-            return -1;
-        if (time < 0 || time > duration) {
-            log.warn("Invalid time: {}", time);
+        if (duration < 0) {
+            log.warn("Invalid bv: {}", bv);
             return -1;
         }
-        if (databaseService.isVideoUnwatched(auth.getMid(), bv))
+        if (time < 0 || time > duration) {
+            log.error("Invalid time: {}", time);
             return -1;
+        }
+        if (databaseService.isVideoUnwatched(auth.getMid(), bv)) {
+            log.warn("User {} has not watched video {}", auth.getMid(), bv);
+            return -1;
+        }
         return databaseService.insertDanmu(auth.getMid(), bv, content, time);
     }
 
     @Override
     public List<Long> displayDanmu(String bv, float timeStart, float timeEnd, boolean filter) {
-        if (timeStart > timeEnd || timeStart < 0 || timeEnd < 0)
+        if (timeStart > timeEnd || timeStart < 0 || timeEnd < 0) {
+            log.error("Invalid time range: {} - {}", timeStart, timeEnd);
             return null;
-        if (bv == null || bv.isEmpty())
-            return null;
+        }
         float duration = databaseService.getValidVideoDuration(bv);
-        if (duration < 0 || timeEnd > duration)
+        if (duration < 0) {
+            log.warn("Invalid bv: {}", bv);
             return null;
+        }
+        if (timeEnd > duration) {
+            log.warn("Time end is too large: {}", timeEnd);
+            return null;
+        }
         if (filter)
             return databaseService.getDanmuFiltered(bv, timeStart, timeEnd);
         else
@@ -67,8 +79,14 @@ public class DanmuServiceImpl implements DanmuService {
         if (userService.invalidAuthInfo(auth))
             return false;
         String bv = databaseService.getBvByDanmuId(id);
-        if (bv == null || bv.isEmpty() || databaseService.isVideoUnwatched(auth.getMid(), bv))
+        if (bv == null || bv.isEmpty()) {
+            log.warn("Invalid danmu id: {}", id);
             return false;
+        }
+        if (databaseService.isVideoUnwatched(auth.getMid(), bv)) {
+            log.warn("User {} has not watched video {}", auth.getMid(), bv);
+            return false;
+        }
         boolean liked = databaseService.isDanmuLiked(auth.getMid(), id);
         if (liked)
             return !databaseService.unlikeDanmu(auth.getMid(), id);

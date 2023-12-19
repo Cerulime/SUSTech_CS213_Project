@@ -36,10 +36,14 @@ public class VideoServiceImpl implements VideoService {
     public String postVideo(AuthInfo auth, PostVideoReq req) {
         if (userService.invalidAuthInfo(auth))
             return null;
-        if (req == null || req.isInvalid())
+        if (req == null || req.isInvalid()) {
+            log.warn("Invalid video info: {}", req);
             return null;
-        if (databaseService.isSameVideoExist(auth.getMid(), req.getTitle()))
+        }
+        if (databaseService.isSameVideoExist(auth.getMid(), req.getTitle())) {
+            log.warn("Same video title exist: {}", req);
             return null;
+        }
         return databaseService.insertVideo(auth.getMid(), req);
     }
 
@@ -48,14 +52,15 @@ public class VideoServiceImpl implements VideoService {
     public boolean deleteVideo(AuthInfo auth, String bv) {
         if (userService.invalidAuthInfo(auth))
             return false;
-        if (bv == null || bv.isEmpty())
-            return false;
         long owner = databaseService.getVideoOwner(bv);
-        if (owner < 0)
+        if (owner < 0) {
+            log.warn("Video not found: {}", bv);
             return false;
+        }
         UserRecord.Identity identity = databaseService.getUserIdentity(auth.getMid());
         if (identity == UserRecord.Identity.SUPERUSER || owner == auth.getMid())
             return databaseService.deleteVideo(bv);
+        log.warn("User {} is not allowed to delete video {}", auth.getMid(), bv);
         return false;
     }
 
@@ -65,18 +70,26 @@ public class VideoServiceImpl implements VideoService {
         if (userService.invalidAuthInfo(auth) || req == null || req.isInvalid())
             return false;
         long owner = databaseService.getVideoOwner(bv);
-        if (owner < 0 || owner != auth.getMid())
+        if (owner < 0 || owner != auth.getMid()) {
+            log.warn("User {} is not allowed to update video {}", auth.getMid(), bv);
             return false;
-        if (databaseService.isNewInfoValid(bv, req))
+        }
+        if (databaseService.isNewInfoValid(bv, req)) {
+            log.warn("Invalid new video info: {}", req);
             return false;
+        }
         return databaseService.updateVideoInfo(bv, req);
     }
 
     @Override
     @Transactional
     public List<String> searchVideo(AuthInfo auth, String keywords, int pageSize, int pageNum) {
-        if (userService.invalidAuthInfo(auth) || pageSize <= 0 || pageNum <= 0)
+        if (userService.invalidAuthInfo(auth))
             return null;
+        if (pageSize <= 0 || pageNum <= 0) {
+            log.warn("Invalid page size or number: {} {}", pageSize, pageNum);
+            return null;
+        }
         if (lastKeywords == null)
             databaseService.createUnloggedTable(auth.getMid());
         List<String> keyword = Arrays.stream(keywords.replace("\t", "").split(" "))
@@ -97,18 +110,20 @@ public class VideoServiceImpl implements VideoService {
 
     @Override
     public double getAverageViewRate(String bv) {
-        if (bv == null || bv.isEmpty())
-            return -1;
         float duration = databaseService.getValidVideoDuration(bv);
-        if (duration < 0)
+        if (duration < 0) {
+            log.warn("Video not found: {}", bv);
             return -1;
+        }
         return databaseService.getAverageViewRate(bv);
     }
 
     @Override
     public Set<Integer> getHotspot(String bv) {
-        if (bv == null || bv.isEmpty() || !databaseService.isDanmuExistByBv(bv))
+        if (bv == null || bv.isEmpty() || !databaseService.isDanmuExistByBv(bv)) {
+            log.warn("getHotspot corner case: {}", bv);
             return new HashSet<>();
+        }
         return databaseService.getHotspot(bv);
     }
 
@@ -116,13 +131,19 @@ public class VideoServiceImpl implements VideoService {
     @Transactional
     public boolean reviewVideo(AuthInfo auth, String bv) {
         if (userService.invalidAuthInfo(auth) ||
-                databaseService.getUserIdentity(auth.getMid()) != UserRecord.Identity.SUPERUSER)
+                databaseService.getUserIdentity(auth.getMid()) != UserRecord.Identity.SUPERUSER) {
+            log.warn("User {} is not allowed to review video {}", auth.getMid(), bv);
             return false;
+        }
         long owner = databaseService.getVideoOwner(bv);
-        if (bv == null || owner < 0 || owner == auth.getMid())
+        if (owner < 0 || owner == auth.getMid()) {
+            log.warn("User {} is not allowed to review video {}", auth.getMid(), bv);
             return false;
-        if (databaseService.isVideoReviewed(bv))
+        }
+        if (databaseService.isVideoReviewed(bv)) {
+            log.warn("Video {} has been reviewed", bv);
             return false;
+        }
         return databaseService.reviewVideo(auth.getMid(), bv);
     }
 
@@ -131,11 +152,15 @@ public class VideoServiceImpl implements VideoService {
     public boolean coinVideo(AuthInfo auth, String bv) {
         if (userService.invalidAuthInfo(auth))
             return false;
-        if (bv == null || databaseService.isVideoNotEngage(auth, bv))
+        if (bv == null || databaseService.isVideoNotEngage(auth, bv)) {
+            log.warn("Invalid video for engaging: {}", bv);
             return false;
+        }
         int coin = databaseService.getCoin(auth.getMid());
-        if (coin < 1)
+        if (coin < 1) {
+            log.warn("User {} has no coin", auth.getMid());
             return false;
+        }
         boolean isCoin = databaseService.coinVideo(auth.getMid(), bv);
         if (isCoin)
             databaseService.updateCoin(auth.getMid(), coin - 1);
@@ -147,8 +172,10 @@ public class VideoServiceImpl implements VideoService {
     public boolean likeVideo(AuthInfo auth, String bv) {
         if (userService.invalidAuthInfo(auth))
             return false;
-        if (bv == null || databaseService.isVideoNotEngage(auth, bv))
+        if (bv == null || databaseService.isVideoNotEngage(auth, bv)) {
+            log.warn("Invalid video for engaging: {}", bv);
             return false;
+        }
         boolean isLike = databaseService.isVideoLiked(auth.getMid(), bv);
         if (isLike)
             return !databaseService.unlikeVideo(auth.getMid(), bv);
@@ -161,8 +188,10 @@ public class VideoServiceImpl implements VideoService {
     public boolean collectVideo(AuthInfo auth, String bv) {
         if (userService.invalidAuthInfo(auth))
             return false;
-        if (bv == null || databaseService.isVideoNotEngage(auth, bv))
+        if (bv == null || databaseService.isVideoNotEngage(auth, bv)) {
+            log.warn("Invalid video for engaging: {}", bv);
             return false;
+        }
         boolean isCollect = databaseService.isVideoCollected(auth.getMid(), bv);
         if (isCollect)
             return !databaseService.uncollectVideo(auth.getMid(), bv);

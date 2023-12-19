@@ -440,6 +440,8 @@ public class DatabaseServiceImpl implements DatabaseService {
 
     @Override
     public float getValidVideoDuration(String bv) {
+        if (bv == null || bv.isEmpty())
+            return -1;
         String sql = "SELECT duration FROM Video WHERE bv = ? AND (public_time IS NULL OR public_time < LOCALTIMESTAMP)";
         try {
             return Optional.ofNullable(jdbcTemplate.queryForObject(sql, Float.class, bv)).orElse(-1f);
