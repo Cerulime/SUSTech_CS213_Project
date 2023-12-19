@@ -82,12 +82,12 @@ public class DatabaseServiceImpl implements DatabaseService {
         jdbcTemplate.execute(createGenderEnum);
 
         String config = """
-                SET work_mem = '128MB';
-                SET maintenance_work_mem = '1GB';
-                SET effective_cache_size = '2GB';
-                SET temp_buffers = '128MB';
+                SET work_mem = '256MB';
+                SET maintenance_work_mem = '2GB';
+                SET effective_cache_size = '4GB';
+                SET temp_buffers = '256MB';
                 SET default_statistics_target = 500;
-                SET max_parallel_workers_per_gather = 4;
+                SET max_parallel_workers_per_gather = 8;
                 """;
 
         jdbcTemplate.execute(config);
@@ -725,11 +725,8 @@ public class DatabaseServiceImpl implements DatabaseService {
         String createPublicVideoTableConstrain = null;
         if (lastUpdateTime == null)
             createPublicVideoTableConstrain = """
-                    ALTER TABLE PublicVideo(
-                    ADD PRIMARY KEY (bv),
-                    ADD FOREIGN KEY (bv) REFERENCES Video(bv)
-                    ON DELETE CASCADE
-                    );
+                    ALTER TABLE PublicVideo ADD PRIMARY KEY (bv);
+                    ALTER TABLE PublicVideo ADD FOREIGN KEY (bv) REFERENCES Video(bv) ON DELETE CASCADE;
                     CREATE INDEX PublicVideoIndex ON PublicVideo (relevance DESC, view_count DESC);
                     """;
         String createPublicVideoTable = """
@@ -738,84 +735,133 @@ public class DatabaseServiceImpl implements DatabaseService {
                 FROM Video
                 JOIN UserProfile ON Video.owner = UserProfile.mid
                 JOIN CountVideo ON Video.bv = CountVideo.bv
-                                
                 """;
         String condition = """
+                                
                 WHERE Video.owner = ? OR (Video.public_time IS NULL OR Video.public_time < LOCALTIMESTAMP)
                 """;
-        String returnTimestamp = "RETURNING LOCALTIMESTAMP;";
+        String selectTimestamp = "SELECT LOCALTIMESTAMP";
         UserRecord.Identity identity = getUserIdentity(mid);
         switch (identity) {
             case USER:
-                lastUpdateTime = jdbcTemplate.queryForObject(createPublicVideoTable + condition + returnTimestamp, Timestamp.class, mid);
+                jdbcTemplate.update(createPublicVideoTable + condition, mid);
                 break;
             case SUPERUSER:
-                lastUpdateTime = jdbcTemplate.queryForObject(createPublicVideoTable + returnTimestamp, Timestamp.class);
+                jdbcTemplate.update(createPublicVideoTable);
                 break;
         }
+        lastUpdateTime = jdbcTemplate.queryForObject(selectTimestamp, Timestamp.class);
         if (createPublicVideoTableConstrain != null)
             jdbcTemplate.execute(createPublicVideoTableConstrain);
     }
 
     @SuppressWarnings("DuplicatedCode")
     @Override
+    @Transactional(propagation = Propagation.MANDATORY)
     public void resetUnloggedTable(long mid) {
-        String truncatePublicVideoTable = """
-                TRUNCATE TABLE PublicVideo;
+        String updateViewCount = """
+                UPDATE PublicVideo
+                SET view_count = CountVideo.view_count, relevance = 0
+                FROM CountVideo
+                WHERE PublicVideo.bv = CountVideo.bv;
                 """;
-        jdbcTemplate.update(truncatePublicVideoTable);
         String insertPublicVideoTable = """
-                INSERT INTO PublicVideo
+                INSERT INTO PublicVideo (bv, text, view_count, relevance)
+                SELECT Video.bv AS bv, lower(CONCAT(Video.title, Video.description, UserProfile.name)) AS text, CountVideo.view_count AS view_count, 0 AS relevance
+                FROM Video
+                LEFT JOIN PublicVideo pv ON v.bv = pv.bv
+                JOIN UserProfile ON Video.owner = UserProfile.mid
+                JOIN CountVideo ON Video.bv = CountVideo.bv
+                WHERE pv.bv IS NULL
+                """;
+        String condition = " AND (Video.owner = ? OR (Video.public_time IS NULL OR Video.public_time < LOCALTIMESTAMP))";
+        String selectTimestamp = "SELECT LOCALTIMESTAMP";
+        UserRecord.Identity identity = getUserIdentity(mid);
+        switch (identity) {
+            case USER:
+                String deleteInvalidVideo = """
+                        DELETE pv
+                        FROM PublicVideo pv
+                        LEFT JOIN Video v ON pv.bv = v.bv
+                            AND (v.owner = ? OR (v.public_time IS NULL OR v.public_time < LOCALTIMESTAMP))
+                        WHERE v.bv IS NULL;
+                        """;
+                jdbcTemplate.update(deleteInvalidVideo, mid);
+                jdbcTemplate.update(updateViewCount);
+                jdbcTemplate.update(insertPublicVideoTable + condition, mid);
+                break;
+            case SUPERUSER:
+                jdbcTemplate.update(updateViewCount);
+                jdbcTemplate.update(insertPublicVideoTable);
+                break;
+        }
+        lastUpdateTime = jdbcTemplate.queryForObject(selectTimestamp, Timestamp.class);
+    }
+
+    @SuppressWarnings("DuplicatedCode")
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void createTempTable(long mid) {
+        String createTempTable = """
+                CREATE TEMP TABLE TempVideo AS
                 SELECT Video.bv AS bv, lower(CONCAT(Video.title, Video.description, UserProfile.name)) AS text, CountVideo.view_count AS view_count, 0 AS relevance
                 FROM Video
                 JOIN UserProfile ON Video.owner = UserProfile.mid
                 JOIN CountVideo ON Video.bv = CountVideo.bv
-                                
+                LEFT JOIN PublicVideo ON Video.bv = PublicVideo.bv
+                WHERE PublicVideo.bv IS NULL
                 """;
-        String condition = """
-                WHERE Video.owner = ? OR (Video.public_time IS NULL OR Video.public_time < LOCALTIMESTAMP)
-                """;
-        String returnTimestamp = "RETURNING LOCALTIMESTAMP;";
+        String condition = " AND Video.owner = ? OR (Video.public_time IS NULL OR Video.public_time < LOCALTIMESTAMP)";
         UserRecord.Identity identity = getUserIdentity(mid);
         switch (identity) {
             case USER:
-                lastUpdateTime = jdbcTemplate.queryForObject(insertPublicVideoTable + condition + returnTimestamp, Timestamp.class, mid);
+                jdbcTemplate.update(createTempTable + condition, mid);
                 break;
             case SUPERUSER:
-                lastUpdateTime = jdbcTemplate.queryForObject(insertPublicVideoTable + returnTimestamp, Timestamp.class);
+                jdbcTemplate.update(createTempTable);
                 break;
         }
     }
 
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
-    public void updateUnloggedTable(long mid) {
-        String insertPublicVideoTable = """
-                INSERT INTO PublicVideo
-                SELECT Video.bv AS bv, lower(CONCAT(Video.title, Video.description, UserProfile.name)) AS text, 0 AS view_count, 0 AS relevance
-                FROM UserProfile JOIN Video ON Video.owner = UserProfile.mid
-                                
+    public void updateRelevanceTemp(String s) {
+        String updateRelevanceTemp = """
+                UPDATE TempVideo
+                SET relevance = relevance + (length(text) - length(replace(text, ?, ''))) / length(?);
                 """;
-        String condition = """
-                WHERE Video.owner = ? OR (Video.public_time IS NULL OR Video.public_time IN RANGE (?, LOCALTIMESTAMP)
-                """;
-        String returnTimestamp = "RETURNING LOCALTIMESTAMP;";
-        UserRecord.Identity identity = getUserIdentity(mid);
-        switch (identity) {
-            case USER:
-                lastUpdateTime = jdbcTemplate.queryForObject(insertPublicVideoTable + condition + returnTimestamp, Timestamp.class, lastUpdateTime, mid);
-                break;
-            case SUPERUSER:
-                lastUpdateTime = jdbcTemplate.queryForObject(insertPublicVideoTable + returnTimestamp, Timestamp.class);
-                break;
-        }
-        String updatePublicVideoTable = """
+        jdbcTemplate.update(updateRelevanceTemp, s, s, s);
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void mergeTemp(long mid) {
+        String updateViewCount = """
                 UPDATE PublicVideo
                 SET view_count = CountVideo.view_count
                 FROM CountVideo
                 WHERE PublicVideo.bv = CountVideo.bv;
                 """;
-        jdbcTemplate.update(updatePublicVideoTable);
+        String mergeTemp = """
+                INSERT INTO PublicVideo (bv, text, view_count, relevance)
+                SELECT bv, text, view_count, relevance
+                FROM TempVideo
+                """;
+        String selectTimestamp = "SELECT LOCALTIMESTAMP";
+        UserRecord.Identity identity = getUserIdentity(mid);
+        if (identity == UserRecord.Identity.USER) {
+            String deleteInvalidVideo = """
+                    DELETE pv
+                    FROM PublicVideo pv
+                    LEFT JOIN Video v ON pv.bv = v.bv
+                        AND (v.owner = ? OR (v.public_time IS NULL OR v.public_time < LOCALTIMESTAMP))
+                    WHERE v.bv IS NULL
+                    """;
+            jdbcTemplate.update(deleteInvalidVideo, mid);
+        }
+        jdbcTemplate.update(updateViewCount);
+        jdbcTemplate.update(mergeTemp);
+        lastUpdateTime = jdbcTemplate.queryForObject(selectTimestamp, Timestamp.class);
     }
 
     @Override
@@ -823,7 +869,8 @@ public class DatabaseServiceImpl implements DatabaseService {
     public void updateRelevance(String s) {
         String updateRelevance = """
                 UPDATE PublicVideo
-                SET relevance = relevance + (length(text) - length(replace(text, ?, ''))) / length(?);
+                SET relevance = relevance + (length(text) - length(replace(text, ?, ''))) / length(?)
+                WHERE ture
                 """;
         jdbcTemplate.update(updateRelevance, s, s, s);
     }
@@ -837,7 +884,7 @@ public class DatabaseServiceImpl implements DatabaseService {
                 WHERE relevance > 0
                 ORDER BY relevance DESC, view_count DESC
                 LIMIT ?
-                OFFSET ?;
+                OFFSET ?
                 """;
         return jdbcTemplate.queryForList(sql, String.class, pageSize, pageSize * (pageNum - 1));
     }
@@ -845,19 +892,18 @@ public class DatabaseServiceImpl implements DatabaseService {
     @Override
     public List<String> getTopVideos(String bv) {
         String sql = """
-                SELECT bv, COUNT(*) AS view_count
-                FROM ViewVideo
-                WHERE mid IN (
-                    SELECT mid
-                    FROM ViewVideo
-                    WHERE bv = ?
-                )
-                AND bv <> ?
-                GROUP BY bv
-                ORDER BY view_count DESC
-                LIMIT 5;
+                SELECT cv.bv, cv.view_count
+                FROM CountVideo cv
+                WHERE cv.bv = ANY(ARRAY(
+                    SELECT vv.bv
+                    FROM ViewVideo vv
+                    WHERE mid = ANY(ARRAY(SELECT mid FROM ViewVideo WHERE bv = ?))
+                    ))
+                ORDER BY cv.view_count DESC
+                LIMIT 5
+                OFFSET 1
                 """;
-        return jdbcTemplate.query(sql, (rs, rowNum) -> rs.getString("bv"), bv, bv);
+        return jdbcTemplate.query(sql, (rs, rowNum) -> rs.getString("bv"), bv);
     }
 
     @Override
@@ -867,20 +913,15 @@ public class DatabaseServiceImpl implements DatabaseService {
                 FROM CountVideo
                 ORDER BY score DESC, view_count DESC
                 LIMIT ?
-                OFFSET ?;
+                OFFSET ?
                 """;
         return jdbcTemplate.queryForList(sql, String.class, pageSize, pageSize * (pageNum - 1));
     }
 
     @Override
-    public List<String> getRecVideosForUser(long mid, int pageSize, int pageNum) {
+    public boolean isInterestsExist(long mid) {
         String sql = """
-                SELECT
-                    vv.bv,
-                    COUNT(vv.mid) AS view_count,
-                    v.owner,
-                    v.public_time,
-                    up.level
+                SELECT vv.bv
                 FROM (
                     SELECT uf1.followee AS mid
                     FROM UserFollow uf1
@@ -889,27 +930,48 @@ public class DatabaseServiceImpl implements DatabaseService {
                         AND uf1.followee = uf2.follower
                     WHERE uf1.follower = ?
                 ) AS friends
-                JOIN
-                    ViewVideo vv ON friends.mid = vv.mid
-                JOIN
-                    Video v ON v.bv = vv.bv
-                JOIN
-                    UserProfile up ON v.owner = up.mid
+                JOIN ViewVideo vv ON friends.mid = vv.mid
                 LEFT JOIN (
                     SELECT bv
                     FROM ViewVideo
                     WHERE mid = ?
-                ) AS excluded_videos ON v.bv = excluded_videos.bv
+                ) AS excluded_videos ON vv.bv = excluded_videos.bv
+                WHERE excluded_videos.bv IS NULL
+                LIMIT 1
+                """;
+        return !jdbcTemplate.query(sql, (rs, rowNum) -> rs.getString("bv"), mid, mid).isEmpty();
+    }
+
+    @Override
+    public List<String> getRecVideosForUser(long mid, int pageSize, int pageNum) {
+        String sql = """
+                SELECT vv.bv, COUNT(vv.mid) AS view_count, up.level, v.public_time
+                FROM (
+                    SELECT uf1.followee AS mid
+                    FROM UserFollow uf1
+                    JOIN UserFollow uf2
+                        ON uf1.follower = uf2.followee
+                        AND uf1.followee = uf2.follower
+                    WHERE uf1.follower = ?
+                ) AS friends
+                JOIN ViewVideo vv ON friends.mid = vv.mid
+                LEFT JOIN (
+                    SELECT bv
+                    FROM ViewVideo
+                    WHERE mid = ?
+                ) AS excluded_videos ON vv.bv = excluded_videos.bv
+                JOIN Video v ON v.bv = vv.bv
+                JOIN UserProfile up ON v.owner = up.mid
                 WHERE
                     excluded_videos.bv IS NULL AND (v.public_time IS NULL OR v.public_time < LOCALTIMESTAMP)
-                GROUP BY
-                    vv.bv
+                GROUP BY vv.bv, up.level, v.public_time
+                HAVING COUNT(vv.mid) > 0
                 ORDER BY
                     view_count DESC,
                     up.level DESC,
                     v.public_time DESC
                 LIMIT ?
-                OFFSET ?;
+                OFFSET ?
                 """;
         return jdbcTemplate.query(sql, (rs, rowNum) -> rs.getString("bv"), mid, mid, pageSize, pageSize * (pageNum - 1));
     }
@@ -917,35 +979,23 @@ public class DatabaseServiceImpl implements DatabaseService {
     @Override
     public List<Long> getRecFriends(long mid, int pageSize, int pageNum) {
         String sql = """
-                WITH user_followings AS (
-                    SELECT followee
-                    FROM UserFollow
-                    WHERE follower = ?
-                )
-                                
                 SELECT
-                    uf.followee AS mid,
+                    uf.follower AS mid,
                     COUNT(uf.followee) AS common_followings,
                     up.level
-                FROM
-                    UserFollow uf
-                JOIN
-                    user_followings uf1 ON uf.follower = uf1.followee
-                LEFT JOIN
-                    user_followings uf2 ON uf.followee = uf2.followee
-                JOIN
-                    UserProfile up ON uf.followee = up.mid
+                FROM UserFollow uf
+                JOIN UserProfile up ON uf.follower = up.mid
                 WHERE
-                    uf2.followee IS NULL
-                GROUP BY
-                    uf.followee
-                ORDER BY
-                    common_followings DESC,
-                    up.level DESC
+                    uf.follower <> ?
+                    AND uf.followee = ANY(ARRAY(SELECT followee FROM UserFollow WHERE follower = ?))
+                    AND uf.follower NOT IN (SELECT followee FROM UserFollow WHERE follower = ?)
+                GROUP BY uf.follower, up.level
+                HAVING COUNT(uf.followee) > 1
+                ORDER BY common_followings DESC, up.level DESC
                 LIMIT ?
-                OFFSET ?;
+                OFFSET ?
                 """;
-        return jdbcTemplate.query(sql, (rs, rowNum) -> rs.getLong("mid"), mid, pageSize, pageSize * (pageNum - 1));
+        return jdbcTemplate.query(sql, (rs, rowNum) -> rs.getLong("mid"), mid, mid, mid, pageSize, pageSize * (pageNum - 1));
     }
 
 }

@@ -43,7 +43,10 @@ public class RecommenderServiceImpl implements RecommenderService {
     public List<String> recommendVideosForUser(AuthInfo auth, int pageSize, int pageNum) {
         if (userService.invalidAuthInfo(auth) || pageSize <= 0 || pageNum <= 0)
             return null;
-        return databaseService.getRecVideosForUser(auth.getMid(), pageSize, pageNum);
+        if (databaseService.isInterestsExist(auth.getMid()))
+            return databaseService.getRecVideosForUser(auth.getMid(), pageSize, pageNum);
+        else
+            return databaseService.getRecVideos(pageSize, pageNum);
     }
 
     @Override

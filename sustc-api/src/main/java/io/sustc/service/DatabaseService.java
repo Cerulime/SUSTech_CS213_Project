@@ -180,7 +180,11 @@ public interface DatabaseService {
 
     void resetUnloggedTable(long mid);
 
-    void updateUnloggedTable(long mid);
+    void createTempTable(long mid);
+
+    void updateRelevanceTemp(String s);
+
+    void mergeTemp(long mid);
 
     void updateRelevance(String s);
 
@@ -189,6 +193,8 @@ public interface DatabaseService {
     List<String> getTopVideos(String bv);
 
     List<String> getRecVideos(int pageSize, int pageNum);
+
+    boolean isInterestsExist(long mid);
 
     List<String> getRecVideosForUser(long mid, int pageSize, int pageNum);
 

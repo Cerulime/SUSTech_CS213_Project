@@ -82,13 +82,16 @@ public class VideoServiceImpl implements VideoService {
         List<String> keyword = Arrays.stream(keywords.replace("\t", "").split(" "))
                 .filter(s -> !s.isEmpty()).sorted().collect(Collectors.toList());
         if (keyword.equals(lastKeywords)) {
-            databaseService.updateUnloggedTable(auth.getMid());
-            return databaseService.searchVideo(pageSize, pageNum);
+            databaseService.createTempTable(auth.getMid());
+            for (String s : keyword)
+                databaseService.updateRelevanceTemp(s.toLowerCase());
+            databaseService.mergeTemp(auth.getMid());
+        } else {
+            lastKeywords = keyword;
+            databaseService.resetUnloggedTable(auth.getMid());
+            for (String s : keyword)
+                databaseService.updateRelevance(s.toLowerCase());
         }
-        lastKeywords = keyword;
-        databaseService.resetUnloggedTable(auth.getMid());
-        for (String s : keyword)
-            databaseService.updateRelevance(s.toLowerCase());
         return databaseService.searchVideo(pageSize, pageNum);
     }
 
