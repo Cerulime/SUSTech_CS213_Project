@@ -204,13 +204,13 @@ public class AsyncInitTable {
         jdbcTemplate.execute(createUserFollowTable);
         String copySql = "COPY UserFollow(follower, followee) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t')";
         StringBuilder copyData = new StringBuilder();
-        int count = 0, batchSize = 50000;
+        int count = 0;
         for (UserRecord user : userRecords) {
             for (long followee : user.getFollowing()) {
                 copyData.append(user.getMid()).append('\t')
                         .append(followee).append('\n');
                 count++;
-                if (count >= batchSize) {
+                if (count >= BIG_BATCH_SIZE) {
                     copyInsertion(copyData.toString(), copySql);
                     copyData.setLength(0);
                     count = 0;
@@ -257,7 +257,7 @@ public class AsyncInitTable {
         jdbcTemplate.execute(createVideoTable);
         String copySql = "COPY Video(bv, title, owner, commit_time, review_time, public_time, duration, description, reviewer) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t', NULL '', QUOTE E'\\x07')";
         StringBuilder copyData = new StringBuilder();
-        int count = 0, batchSize = 10000;
+        int count = 0;
         for (VideoRecord video : videoRecords) {
             transformer.setAvCount(Math.max(transformer.getAvCount(), transformer.getAv(video.getBv())));
             String escapeTitle = escape(video.getTitle());
@@ -284,7 +284,7 @@ public class AsyncInitTable {
                     .append(escapeDescription).append('\t')
                     .append(video.getReviewer() == 0 ? "" : video.getReviewer()).append('\n');
             count++;
-            if (count >= batchSize) {
+            if (count >= NORMAL_BATCH_SIZE) {
                 copyInsertion(copyData.toString(), copySql);
                 copyData.setLength(0);
                 count = 0;
@@ -332,7 +332,7 @@ public class AsyncInitTable {
         jdbcTemplate.execute(createCountVideoTable);
         String copySql = "COPY CountVideo(bv, like_count, coin_count, fav_count, view_count, view_rate, danmu_count, score) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t')";
         StringBuilder copyData = new StringBuilder();
-        int count = 0, batchSize = 10000;
+        int count = 0;
         Map<String, Long> danmuCounts = danmuRecords.stream()
                 .collect(Collectors.groupingBy(DanmuRecord::getBv, Collectors.counting()));
         for (VideoRecord video : videoRecords) {
@@ -364,7 +364,7 @@ public class AsyncInitTable {
                     .append(danmuCount).append('\t')
                     .append(score).append('\n');
             count++;
-            if (count >= batchSize) {
+            if (count >= NORMAL_BATCH_SIZE) {
                 copyInsertion(copyData.toString(), copySql);
                 copyData.setLength(0);
                 count = 0;
@@ -435,14 +435,14 @@ public class AsyncInitTable {
         jdbcTemplate.execute(createLikeVideoTable);
         String copySql = "COPY LikeVideo(mid, bv) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t')";
         StringBuilder copyData = new StringBuilder();
-        int count = 0, batchSize = 50000;
+        int count = 0;
         for (VideoRecord video : VideoRecords) {
             String bv = video.getBv();
             for (long mid : video.getLike()) {
                 copyData.append(mid).append('\t')
                         .append(bv).append('\n');
                 count++;
-                if (count >= batchSize) {
+                if (count >= BIG_BATCH_SIZE) {
                     copyInsertion(copyData.toString(), copySql);
                     copyData.setLength(0);
                     count = 0;
@@ -478,14 +478,14 @@ public class AsyncInitTable {
         jdbcTemplate.execute(createCoinVideoTable);
         String copySql = "COPY CoinVideo(mid, bv) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t')";
         StringBuilder copyData = new StringBuilder();
-        int count = 0, batchSize = 50000;
+        int count = 0;
         for (VideoRecord video : VideoRecords) {
             String bv = video.getBv();
             for (long mid : video.getCoin()) {
                 copyData.append(mid).append('\t')
                         .append(bv).append('\n');
                 count++;
-                if (count >= batchSize) {
+                if (count >= BIG_BATCH_SIZE) {
                     copyInsertion(copyData.toString(), copySql);
                     copyData.setLength(0);
                     count = 0;
@@ -521,14 +521,14 @@ public class AsyncInitTable {
         jdbcTemplate.execute(createFavVideoTable);
         String copySql = "COPY FavVideo(mid, bv) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t')";
         StringBuilder copyData = new StringBuilder();
-        int count = 0, batchSize = 50000;
+        int count = 0;
         for (VideoRecord video : videoRecords) {
             String bv = video.getBv();
             for (long mid : video.getFavorite()) {
                 copyData.append(mid).append('\t')
                         .append(bv).append('\n');
                 count++;
-                if (count >= batchSize) {
+                if (count >= BIG_BATCH_SIZE) {
                     copyInsertion(copyData.toString(), copySql);
                     copyData.setLength(0);
                     count = 0;
@@ -568,7 +568,7 @@ public class AsyncInitTable {
         jdbcTemplate.execute(createViewVideoTable);
         String copySql = "COPY ViewVideo(mid, bv, view_time) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t')";
         StringBuilder copyData = new StringBuilder();
-        int count = 0, batchSize = 50000;
+        int count = 0;
         for (VideoRecord video : videoRecords) {
             long[] viewerMids = video.getViewerMids();
             String bv = video.getBv();
@@ -579,7 +579,7 @@ public class AsyncInitTable {
                         .append(bv).append('\t')
                         .append(viewTimes[i]).append('\n');
                 count++;
-                if (count >= batchSize) {
+                if (count >= BIG_BATCH_SIZE) {
                     copyInsertion(copyData.toString(), copySql);
                     copyData.setLength(0);
                     count = 0;
@@ -656,7 +656,7 @@ public class AsyncInitTable {
         jdbcTemplate.execute(createDanmuTable);
         String copySql = "COPY Danmu(id, bv, mid, dis_time, content, post_time) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t', QUOTE E'\\x07')";
         StringBuilder copyData = new StringBuilder();
-        int count = 0, batchSize = 10000, danmuId = 0;
+        int count = 0, danmuId = 0;
         for (DanmuRecord danmu : danmuRecords) {
             danmuId++;
             if (escape(danmu.getContent()).length() > MAX_CONTENT_LENGTH) {
@@ -672,7 +672,7 @@ public class AsyncInitTable {
                     .append(escape(danmu.getContent())).append('\t')
                     .append(danmu.getPostTime()).append('\n');
             count++;
-            if (count >= batchSize) {
+            if (count >= NORMAL_BATCH_SIZE) {
                 copyInsertion(copyData.toString(), copySql);
                 copyData.setLength(0);
                 count = 0;
@@ -723,14 +723,14 @@ public class AsyncInitTable {
         jdbcTemplate.execute(createLikeDanmuTable);
         String copySql = "COPY LikeDanmu(mid, id) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t')";
         StringBuilder copyData = new StringBuilder();
-        int count = 0, batchSize = 50000, danmuID = 0;
+        int count = 0, danmuID = 0;
         for (DanmuRecord danmu : danmuRecords) {
             danmuID++;
             for (long mid : danmu.getLikedBy()) {
                 copyData.append(mid).append('\t')
                         .append(danmuID).append('\n');
                 count++;
-                if (count >= batchSize) {
+                if (count >= BIG_BATCH_SIZE) {
                     copyInsertion(copyData.toString(), copySql);
                     copyData.setLength(0);
                     count = 0;

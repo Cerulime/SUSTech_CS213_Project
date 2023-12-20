@@ -83,7 +83,7 @@ public class DatabaseServiceImpl implements DatabaseService {
 
         String config = """
                 SET work_mem = '256MB';
-                SET maintenance_work_mem = '2GB';
+                SET maintenance_work_mem = '1.5GB';
                 SET effective_cache_size = '4GB';
                 SET temp_buffers = '256MB';
                 SET default_statistics_target = 500;
@@ -119,7 +119,7 @@ public class DatabaseServiceImpl implements DatabaseService {
 
         createGetHotspotFunction();
 
-        jdbcTemplate.execute("ANALYZE;");
+//        jdbcTemplate.execute("ANALYZE;");
 
         log.info("End importing at " + new Timestamp(new Date().getTime()));
 

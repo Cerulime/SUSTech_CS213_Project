@@ -61,6 +61,8 @@ public interface DatabaseService {
     int MAX_DESCRIPTION_LENGTH = 1600;
 
     int MAX_CONTENT_LENGTH = 300;
+    int NORMAL_BATCH_SIZE = 1000;
+    int BIG_BATCH_SIZE = 10000;
 
     AuthInfo getAuthInfo(long mid);
 
