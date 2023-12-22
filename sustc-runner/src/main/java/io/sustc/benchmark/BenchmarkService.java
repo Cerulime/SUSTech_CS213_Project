@@ -15,6 +15,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.io.FileInputStream;
+import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.List;
 
@@ -52,11 +53,12 @@ public class BenchmarkService {
         userSteram.close();
         List<UserRecord> userRecords = (List<UserRecord>) fury.deserialize(userBytes);
 
-        FileInputStream videoStream = new FileInputStream(
-                dataDir.resolve(BenchmarkConstants.VIDEO_FILENAME).toString());
-        byte[] videoBytes = videoStream.readAllBytes();
-        videoStream.close();
-        List<VideoRecord> videoRecords = (List<VideoRecord>) fury.deserialize(videoBytes);
+//        FileInputStream videoStream = new FileInputStream(
+//                dataDir.resolve(BenchmarkConstants.VIDEO_FILENAME).toString());
+//        byte[] videoBytes = videoStream.readAllBytes();
+//        videoStream.close();
+        List<VideoRecord> videoRecords = (List<VideoRecord>) fury.deserialize(Files.readAllBytes(
+                dataDir.resolve(BenchmarkConstants.VIDEO_FILENAME)));
 
         val startedTime = System.nanoTime();
         try {

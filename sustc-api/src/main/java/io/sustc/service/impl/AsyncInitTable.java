@@ -282,7 +282,7 @@ public class AsyncInitTable {
                     .append(video.getPublicTime()).append('\t')
                     .append(video.getDuration()).append('\t')
                     .append(escapeDescription).append('\t')
-                    .append(video.getReviewer() == 0 ? "" : video.getReviewer()).append('\n');
+                    .append(video.getReviewer()).append('\n');
             count++;
             if (count >= NORMAL_BATCH_SIZE) {
                 copyInsertion(copyData.toString(), copySql);

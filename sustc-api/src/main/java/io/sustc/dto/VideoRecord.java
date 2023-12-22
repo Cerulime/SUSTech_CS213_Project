@@ -56,7 +56,7 @@ public class VideoRecord implements Serializable, Comparable<VideoRecord> {
     /**
      * The (reviewer) of this video, can be null
      */
-    private long reviewer;
+    private Long reviewer;
 
     /**
      * The users' {@code mid}s who liked this video
