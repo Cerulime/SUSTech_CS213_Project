@@ -993,7 +993,7 @@ public class DatabaseServiceImpl implements DatabaseService {
                     AND uf.follower NOT IN (SELECT followee FROM UserFollow WHERE follower = ?)
                 GROUP BY uf.follower, up.level
                 HAVING COUNT(uf.followee) > 1
-                ORDER BY common_followings DESC, up.level DESC
+                ORDER BY common_followings DESC, up.level DESC, mid ASC
                 LIMIT ?
                 OFFSET ?
                 """;
