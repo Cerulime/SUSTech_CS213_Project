@@ -901,7 +901,7 @@ public class DatabaseServiceImpl implements DatabaseService {
                     FROM ViewVideo vv
                     WHERE mid = ANY(ARRAY(SELECT mid FROM ViewVideo WHERE bv = ?))
                     ))
-                ORDER BY cv.view_count DESC
+                ORDER BY cv.view_count DESC, cv.bv ASC
                 LIMIT 5
                 OFFSET 1
                 """;
