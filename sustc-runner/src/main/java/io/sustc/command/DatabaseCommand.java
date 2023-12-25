@@ -24,7 +24,7 @@ public class DatabaseCommand {
         return databaseService.getGroupMembers();
     }
 
-    @ShellMethod(key = "db import", value = "Import data from ser")
+    @ShellMethod(key = "db import", value = "Import data from csv")
     public void importData() {
         databaseService.truncate();
         benchmarkService.importData();

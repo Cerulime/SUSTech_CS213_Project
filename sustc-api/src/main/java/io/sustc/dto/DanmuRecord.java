@@ -1,9 +1,15 @@
 package io.sustc.dto;
 
 import lombok.Data;
+
 import java.io.Serializable;
 import java.sql.Timestamp;
 
+/**
+ * The danmu record used for data import
+ *
+ * @implNote You may implement your own {@link java.lang.Object#toString()} since the default one in {@link lombok.Data} prints all array values.
+ */
 @Data
 public class DanmuRecord implements Serializable {
 

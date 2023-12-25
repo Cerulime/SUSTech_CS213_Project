@@ -7,6 +7,9 @@ import lombok.NoArgsConstructor;
 
 import java.io.Serializable;
 
+/**
+ * The user information class
+ */
 @Data
 @Builder
 @NoArgsConstructor

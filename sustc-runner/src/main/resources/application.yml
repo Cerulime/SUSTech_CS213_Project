@@ -7,6 +7,11 @@ spring:
       connection-timeout: 30000
       maximum-pool-size: 10
 
+logging:
+  level:
+    root: off
+    io.sustc: debug
+
 ---
 
 benchmark:

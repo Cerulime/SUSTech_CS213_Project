@@ -9,6 +9,8 @@ public interface RecommenderService {
     /**
      * Recommends a list of top 5 similar videos for a video.
      * The similarity is defined as the number of users (in the database) who have watched both videos.
+     * If two videos have the same similarity,
+     * sort them by their bv in ascending order,
      *
      * @param bv the current video
      * @return a list of video {@code bv}s
@@ -54,7 +56,7 @@ public interface RecommenderService {
      * Recommends videos for a user, restricted on their interests.
      * The user's interests are defined as the videos that the user's friend(s) have watched,
      * filter out the videos that the user has already watched.
-     * Friend(s) of current user is/are the one(s) who is/are both the current user's follower and followee at the same time.
+     * Friend(s) of current user is/are the one(s) who is/are both the current user' follower and followee at the same time.
      * Sort the videos by:
      * <ol>
      *   <li>The number of friends who have watched the video</li>
@@ -81,8 +83,9 @@ public interface RecommenderService {
     /**
      * Recommends friends for a user, based on their common followings.
      * Find all users that are not currently followed by the user, and have at least one common following with the user.
-     * Sort the users by the number of common followings, if two users have the same number of common followings,
-     * sort them by their {@code level}.
+     * Sort the users by the number of common followings in descending order.
+     * If two users have the same number of common followings,
+     * sort them by their {@code level} in descending order, then by their {@code mid} in ascending order.
      *
      * @param auth     the current user's authentication information to be recommended
      * @param pageSize the page size, if there are less than {@code pageSize} users, return all of them

@@ -10,6 +10,9 @@ import java.time.DateTimeException;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 
+/**
+ * The user registration request information class
+ */
 @Data
 @Builder
 @NoArgsConstructor

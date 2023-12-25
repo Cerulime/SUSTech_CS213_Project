@@ -5,6 +5,11 @@ import lombok.Data;
 import java.io.Serializable;
 import java.sql.Timestamp;
 
+/**
+ * The video record used for data import
+ *
+ * @implNote You may implement your own {@link java.lang.Object#toString()} since the default one in {@link lombok.Data} prints all array values.
+ */
 @Data
 public class VideoRecord implements Serializable, Comparable<VideoRecord> {
 
@@ -54,7 +59,7 @@ public class VideoRecord implements Serializable, Comparable<VideoRecord> {
     private String description;
 
     /**
-     * The (reviewer) of this video, can be null
+     * The reviewer of this video, can be null
      */
     private Long reviewer;
 
