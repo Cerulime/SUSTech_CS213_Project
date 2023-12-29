@@ -625,7 +625,7 @@ public class DatabaseServiceImpl implements DatabaseService {
     public boolean isDanmuExistByBv(String bv) {
         String sql = "SELECT EXISTS(SELECT id FROM Danmu WHERE bv = ?)";
         try {
-            return jdbcTemplate.queryForObject(sql, Long.class, bv) != null;
+            return Boolean.TRUE.equals(jdbcTemplate.queryForObject(sql, Boolean.class, bv));
         } catch (EmptyResultDataAccessException e) {
             return false;
         }
@@ -771,10 +771,10 @@ public class DatabaseServiceImpl implements DatabaseService {
                 INSERT INTO PublicVideo (bv, text, view_count, relevance)
                 SELECT Video.bv AS bv, lower(CONCAT(Video.title, Video.description, UserProfile.name)) AS text, CountVideo.view_count AS view_count, 0 AS relevance
                 FROM Video
-                LEFT JOIN PublicVideo pv ON v.bv = pv.bv
+                LEFT JOIN PublicVideo ON Video.bv = PublicVideo.bv
                 JOIN UserProfile ON Video.owner = UserProfile.mid
                 JOIN CountVideo ON Video.bv = CountVideo.bv
-                WHERE pv.bv IS NULL
+                WHERE PublicVideo.bv IS NULL
                 """;
         String condition = " AND (Video.owner = ? OR (Video.public_time IS NULL OR Video.public_time < LOCALTIMESTAMP))";
         String selectTimestamp = "SELECT LOCALTIMESTAMP";
@@ -782,11 +782,14 @@ public class DatabaseServiceImpl implements DatabaseService {
         switch (identity) {
             case USER:
                 String deleteInvalidVideo = """
-                        DELETE pv
-                        FROM PublicVideo pv
-                        LEFT JOIN Video v ON pv.bv = v.bv
-                            AND (v.owner = ? OR (v.public_time IS NULL OR v.public_time < LOCALTIMESTAMP))
-                        WHERE v.bv IS NULL;
+                        DELETE FROM PublicVideo
+                        WHERE bv IN (
+                            SELECT pv.bv
+                            FROM PublicVideo pv
+                            LEFT JOIN Video v ON pv.bv = v.bv
+                                AND (v.owner = ? OR (v.public_time IS NULL OR v.public_time < LOCALTIMESTAMP))
+                            WHERE v.bv IS NULL
+                        )
                         """;
                 jdbcTemplate.update(deleteInvalidVideo, mid);
                 jdbcTemplate.update(updateViewCount);
@@ -893,19 +896,16 @@ public class DatabaseServiceImpl implements DatabaseService {
 
     @Override
     public List<String> getTopVideos(String bv) {
-        String sql = """
-                SELECT cv.bv, cv.view_count
-                FROM CountVideo cv
-                WHERE cv.bv = ANY(ARRAY(
-                    SELECT vv.bv
-                    FROM ViewVideo vv
-                    WHERE mid = ANY(ARRAY(SELECT mid FROM ViewVideo WHERE bv = ?))
-                    ))
-                ORDER BY cv.view_count DESC, cv.bv ASC
+        String slowPath = """
+                SELECT bv, Count(bv) as bv_count
+                FROM ViewVideo
+                WHERE mid = ANY(ARRAY(SELECT mid FROM ViewVideo WHERE bv = ?))
+                GROUP BY bv
+                ORDER BY bv_count DESC, bv ASC
                 LIMIT 5
                 OFFSET 1
                 """;
-        return jdbcTemplate.query(sql, (rs, rowNum) -> rs.getString("bv"), bv);
+        return jdbcTemplate.query(slowPath, (rs, rowNum) -> rs.getString("bv"), bv);
     }
 
     @Override

@@ -65,17 +65,16 @@ public class UserServiceImpl implements UserService {
         AuthInfo QqData = null, WechatData = null;
         if (auth.getQq() != null && !auth.getQq().isEmpty()) {
             QqData = databaseService.getAuthInfoByQq(auth.getQq());
-            if (QqData == null || QqData.getMid() != auth.getMid())
+            if (QqData == null || (auth.getMid() != 0 && QqData.getMid() != auth.getMid()))
                 return true;
         }
         if (auth.getWechat() != null && !auth.getWechat().isEmpty()) {
             WechatData = databaseService.getAuthInfoByWechat(auth.getWechat());
-            if (WechatData == null || WechatData.getMid() != auth.getMid())
+            if (WechatData == null || (auth.getMid() != 0 && WechatData.getMid() != auth.getMid()))
                 return true;
         }
         if (QqData != null && WechatData != null)
             return !QqData.equals(WechatData);
-        log.warn("Invalid auth info: {}", auth);
         return false;
     }
 

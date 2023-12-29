@@ -15,5 +15,5 @@ logging:
 ---
 
 benchmark:
-  data-path: data
+  data-path: data/small
   student-mode: true

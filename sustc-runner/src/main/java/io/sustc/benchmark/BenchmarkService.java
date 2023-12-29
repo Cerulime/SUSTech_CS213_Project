@@ -95,7 +95,7 @@ public class BenchmarkService {
 
         val startTime = System.currentTimeMillis();
         try {
-            databaseService.importData(danmuRecords, userRecords, videoRecords);
+//            databaseService.importData(danmuRecords, userRecords, videoRecords);
         } catch (Exception e) {
             log.error("Exception encountered during importing data, you may early stop this run", e);
         }
@@ -124,7 +124,7 @@ public class BenchmarkService {
             }
         });
         val endTime = System.currentTimeMillis();
-
+        log.info("Pass videoSearch1. Time: {}", endTime - startTime);
         return new BenchmarkResult(pass, endTime - startTime);
     }
 
@@ -147,7 +147,7 @@ public class BenchmarkService {
             }
         });
         val endTime = System.currentTimeMillis();
-
+        log.info("Pass videoViewRate. Time: {}", endTime - startTime);
         return new BenchmarkResult(pass, endTime - startTime);
     }
 
@@ -170,7 +170,7 @@ public class BenchmarkService {
             }
         });
         val endTime = System.currentTimeMillis();
-
+        log.info("Pass videoHotspot. Time: {}", endTime - startTime);
         return new BenchmarkResult(pass, endTime - startTime);
     }
 
@@ -193,7 +193,7 @@ public class BenchmarkService {
             }
         });
         val endTime = System.currentTimeMillis();
-
+        log.info("Pass recVideo. Time: {}", endTime - startTime);
         return new BenchmarkResult(pass, endTime - startTime);
     }
 
@@ -217,7 +217,7 @@ public class BenchmarkService {
             }
         });
         val endTime = System.currentTimeMillis();
-
+        log.info("Pass recGeneral. Time: {}", endTime - startTime);
         return new BenchmarkResult(pass, endTime - startTime);
     }
 
@@ -241,7 +241,7 @@ public class BenchmarkService {
             }
         });
         val endTime = System.currentTimeMillis();
-
+        log.info("Pass recUser. Time: {}", endTime - startTime);
         return new BenchmarkResult(pass, endTime - startTime);
     }
 
@@ -265,7 +265,7 @@ public class BenchmarkService {
             }
         });
         val endTime = System.currentTimeMillis();
-
+        log.info("Pass recFriends. Time: {}", endTime - startTime);
         return new BenchmarkResult(pass, endTime - startTime);
     }
 
@@ -290,7 +290,7 @@ public class BenchmarkService {
             }
         });
         val endTime = System.currentTimeMillis();
-
+        log.info("Pass danmuDisplay. Time: {}", endTime - startTime);
         return new BenchmarkResult(pass, endTime - startTime);
     }
 
@@ -323,7 +323,7 @@ public class BenchmarkService {
             }
         });
         val endTime = System.currentTimeMillis();
-
+        log.info("Pass danmuSend. Time: {}", endTime - startTime);
         return new BenchmarkResult(pass, endTime - startTime);
     }
 
@@ -346,7 +346,7 @@ public class BenchmarkService {
             }
         });
         val endTime = System.currentTimeMillis();
-
+        log.info("Pass getUserInfo. Time: {}", endTime - startTime);
         return new BenchmarkResult(pass, endTime - startTime);
     }
 
@@ -358,6 +358,7 @@ public class BenchmarkService {
         val danmuIDs = new ArrayList<>(sentDanmu.keySet());
         val random = new Random();
 
+        val startTime = System.currentTimeMillis();
         cases.entrySet().parallelStream().forEach(it -> {
             try {
                 val danmuId = danmuIDs.get(random.nextInt(danmuIDs.size()));
@@ -373,8 +374,9 @@ public class BenchmarkService {
                 log.error("Exception thrown for {}", it.getKey(), e);
             }
         });
-
-        return new BenchmarkResult(pass, null);
+        val endTime = System.currentTimeMillis();
+        log.info("Pass danmuLike. Time: {}", endTime - startTime);
+        return new BenchmarkResult(pass, endTime - startTime);
     }
 
     @BenchmarkStep(order = 13, description = "Test VideoService#coinVideo(AuthInfo, String)")
@@ -397,7 +399,7 @@ public class BenchmarkService {
             }
         });
         val endTime = System.currentTimeMillis();
-
+        log.info("Pass videoCoin. Time: {}", endTime - startTime);
         return new BenchmarkResult(pass, endTime - startTime);
     }
 
@@ -421,7 +423,7 @@ public class BenchmarkService {
             }
         });
         val endTime = System.currentTimeMillis();
-
+        log.info("Pass videoLike. Time: {}", endTime - startTime);
         return new BenchmarkResult(pass, endTime - startTime);
     }
 
@@ -445,7 +447,7 @@ public class BenchmarkService {
             }
         });
         val endTime = System.currentTimeMillis();
-
+        log.info("Pass videoCollect. Time: {}", endTime - startTime);
         return new BenchmarkResult(pass, endTime - startTime);
     }
 
@@ -478,7 +480,7 @@ public class BenchmarkService {
             }
         });
         val endTime = System.currentTimeMillis();
-
+        log.info("Pass videoPost. Time: {}", endTime - startTime);
         return new BenchmarkResult(pass, endTime - startTime);
     }
 
@@ -511,7 +513,7 @@ public class BenchmarkService {
             }
         });
         val endTime = System.currentTimeMillis();
-
+        log.info("Pass userRegister. Time: {}", endTime - startTime);
         return new BenchmarkResult(pass, endTime - startTime);
     }
 
@@ -535,7 +537,7 @@ public class BenchmarkService {
             }
         });
         val endTime = System.currentTimeMillis();
-
+        log.info("Pass videoUpdate. Time: {}", endTime - startTime);
         return new BenchmarkResult(pass, endTime - startTime);
     }
 
@@ -572,7 +574,7 @@ public class BenchmarkService {
             }
         });
         val endTime = System.currentTimeMillis();
-
+        log.info("Pass videoReview. Time: {}", endTime - startTime);
         return new BenchmarkResult(pass, endTime - startTime);
     }
 
@@ -596,7 +598,7 @@ public class BenchmarkService {
             }
         });
         val endTime = System.currentTimeMillis();
-
+        log.info("Pass videoSearch2. Time: {}", endTime - startTime);
         return new BenchmarkResult(pass, endTime - startTime);
     }
 
@@ -634,7 +636,7 @@ public class BenchmarkService {
             }
         });
         val endTime = System.currentTimeMillis();
-
+        log.info("Pass videoDelete. Time: {}", endTime - startTime);
         return new BenchmarkResult(pass, endTime - startTime);
     }
 
@@ -672,7 +674,7 @@ public class BenchmarkService {
             }
         });
         val endTime = System.currentTimeMillis();
-
+        log.info("Pass userDelete. Time: {}", endTime - startTime);
         return new BenchmarkResult(pass, endTime - startTime);
     }
 
@@ -696,7 +698,7 @@ public class BenchmarkService {
             }
         });
         val endTime = System.currentTimeMillis();
-
+        log.info("Pass userFollow. Time: {}", endTime - startTime);
         return new BenchmarkResult(pass, endTime - startTime);
     }
 
