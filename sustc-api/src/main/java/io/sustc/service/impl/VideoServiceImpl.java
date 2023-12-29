@@ -90,8 +90,6 @@ public class VideoServiceImpl implements VideoService {
             log.warn("Invalid page size or number: {} {}", pageSize, pageNum);
             return null;
         }
-        if (lastKeywords == null)
-            databaseService.createUnloggedTable(auth.getMid());
         List<String> keyword = Arrays.stream(keywords.replace("\t", "").split(" "))
                 .filter(s -> !s.isEmpty()).sorted().collect(Collectors.toList());
         if (keyword.equals(lastKeywords)) {

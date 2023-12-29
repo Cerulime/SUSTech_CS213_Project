@@ -178,8 +178,6 @@ public interface DatabaseService {
 
     boolean updateVideoInfo(String bv, PostVideoReq req);
 
-    void createUnloggedTable(long mid);
-
     void resetUnloggedTable(long mid);
 
     void createTempTable(long mid);

@@ -89,4 +89,10 @@ public interface UserService {
     boolean follow(AuthInfo auth, long followeeMid);
 
     boolean invalidAuthInfo(AuthInfo auth);
+
+    Concurrency concurrency = Concurrency.Sync;
+
+    enum Concurrency {
+        Sync, Async
+    }
 }

@@ -48,7 +48,7 @@ public class AsyncInitTable {
                 .replace("\n", "\\n");
     }
 
-    @Async
+    @Async("taskExecutor")
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public CompletableFuture<Void> initUserAuthTableAsync(List<UserRecord> userRecords) {
         return CompletableFuture.runAsync(() -> initUserAuthTable(userRecords));
@@ -105,7 +105,7 @@ public class AsyncInitTable {
         log.info("Finish initializing UserAuth table");
     }
 
-    @Async
+    @Async("taskExecutor")
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public CompletableFuture<Void> initUserProfileTableAsync(List<UserRecord> userRecords) {
         return CompletableFuture.runAsync(() -> initUserProfileTable(userRecords));
@@ -184,7 +184,7 @@ public class AsyncInitTable {
         log.info("Finish initializing UserProfile table");
     }
 
-    @Async
+    @Async("taskExecutor")
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public CompletableFuture<Void> initUserFollowTableAsync(List<UserRecord> userRecords) {
         return CompletableFuture.runAsync(() -> initUserFollowTable(userRecords));
@@ -234,7 +234,7 @@ public class AsyncInitTable {
         log.info("Finish initializing UserFollow table");
     }
 
-    @Async
+    @Async("taskExecutor")
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public CompletableFuture<Void> initVideoTableAsync(List<VideoRecord> videoRecords) {
         return CompletableFuture.runAsync(() -> initVideoTable(videoRecords));
@@ -311,7 +311,7 @@ public class AsyncInitTable {
         log.info("Finish initializing Video table");
     }
 
-    @Async
+    @Async("taskExecutor")
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public CompletableFuture<Void> initCountVideoTableAsync(List<VideoRecord> videoRecords, List<DanmuRecord> danmuRecords) {
         return CompletableFuture.runAsync(() -> initCountVideoTable(videoRecords, danmuRecords));
@@ -415,7 +415,7 @@ public class AsyncInitTable {
         log.info("Finish initializing CountVideo table");
     }
 
-    @Async
+    @Async("taskExecutor")
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public CompletableFuture<Void> initLikeVideoTableAsync(List<VideoRecord> VideoRecords) {
         return CompletableFuture.runAsync(() -> initLikeVideoTable(VideoRecords));
@@ -458,7 +458,7 @@ public class AsyncInitTable {
         log.info("Finish initializing LikeVideo table");
     }
 
-    @Async
+    @Async("taskExecutor")
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public CompletableFuture<Void> initCoinVideoTableAsync(List<VideoRecord> VideoRecords) {
         return CompletableFuture.runAsync(() -> initCoinVideoTable(VideoRecords));
@@ -501,7 +501,7 @@ public class AsyncInitTable {
         log.info("Finish initializing CoinVideo table");
     }
 
-    @Async
+    @Async("taskExecutor")
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public CompletableFuture<Void> initFavVideoTableAsync(List<VideoRecord> videoRecords) {
         return CompletableFuture.runAsync(() -> initFavVideoTable(videoRecords));
@@ -544,7 +544,7 @@ public class AsyncInitTable {
         log.info("Finish initializing FavVideo table");
     }
 
-    @Async
+    @Async("taskExecutor")
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public CompletableFuture<Void> initViewVideoTableAsync(List<VideoRecord> videoRecords) {
         return CompletableFuture.runAsync(() -> initViewVideoTable(videoRecords));
@@ -637,7 +637,7 @@ public class AsyncInitTable {
         log.info("Finish initializing ViewVideo table");
     }
 
-    @Async
+    @Async("taskExecutor")
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public CompletableFuture<Void> initDanmuTableAsync(List<DanmuRecord> danmuRecords) {
         return CompletableFuture.runAsync(() -> initDanmuTable(danmuRecords));
@@ -703,7 +703,7 @@ public class AsyncInitTable {
         log.info("Finish initializing Danmu table");
     }
 
-    @Async
+    @Async("taskExecutor")
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public CompletableFuture<Void> initLikeDanmuTableAsync(List<DanmuRecord> danmuRecords) {
         return CompletableFuture.runAsync(() -> initLikeDanmuTable(danmuRecords));

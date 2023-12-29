@@ -75,6 +75,10 @@ public class UserServiceImpl implements UserService {
         }
         if (QqData != null && WechatData != null)
             return !QqData.equals(WechatData);
+        if (QqData != null)
+            auth.replace(QqData);
+        if (WechatData != null)
+            auth.replace(WechatData);
         return false;
     }
 
@@ -116,6 +120,36 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public UserInfoResp getUserInfo(long mid) {
+        return switch (concurrency) {
+            case Sync -> getUserInfoSync(mid);
+            case Async -> getUserInfoAsync(mid);
+        };
+    }
+
+    private UserInfoResp getUserInfoSync(long mid) {
+        if (databaseService.isMidNotExist(mid)) {
+            log.warn("Can not find: {}", mid);
+            return null;
+        }
+        long[] following = databaseService.getFollowing(mid);
+        long[] follower = databaseService.getFollower(mid);
+        String[] watched = databaseService.getWatched(mid);
+        String[] liked = databaseService.getLiked(mid);
+        String[] collected = databaseService.getCollected(mid);
+        String[] posted = databaseService.getPosted(mid);
+        return UserInfoResp.builder()
+                .mid(mid)
+                .coin(databaseService.getCoin(mid))
+                .following(following)
+                .follower(follower)
+                .watched(watched)
+                .liked(liked)
+                .collected(collected)
+                .posted(posted)
+                .build();
+    }
+
+    private UserInfoResp getUserInfoAsync(long mid) {
         if (databaseService.isMidNotExist(mid)) {
             log.warn("Can not find: {}", mid);
             return null;

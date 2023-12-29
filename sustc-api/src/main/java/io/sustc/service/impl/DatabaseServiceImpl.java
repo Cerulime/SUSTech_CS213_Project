@@ -25,14 +25,12 @@ import java.util.regex.Pattern;
 public class DatabaseServiceImpl implements DatabaseService {
 
     private final JdbcTemplate jdbcTemplate;
-    private Timestamp lastUpdateTime;
     private final Transformer transformer;
     private final AsyncInitTable asyncInitTable;
 
     @Autowired
     public DatabaseServiceImpl(DataSource dataSource) {
         this.jdbcTemplate = new JdbcTemplate(dataSource);
-        this.lastUpdateTime = null;
         this.transformer = new Transformer();
         this.asyncInitTable = new AsyncInitTable(jdbcTemplate);
     }
@@ -119,7 +117,17 @@ public class DatabaseServiceImpl implements DatabaseService {
 
         createGetHotspotFunction();
 
-//        jdbcTemplate.execute("ANALYZE;");
+        String createPublicVideoTable = String.format("""
+                CREATE UNLOGGED TABLE IF NOT EXISTS PublicVideo (
+                    bv CHAR(%d) PRIMARY KEY,
+                    text VARCHAR(%d) NOT NULL,
+                    view_count INTEGER NOT NULL,
+                    relevance INTEGER NOT NULL,
+                    FOREIGN KEY (bv) REFERENCES Video(bv) ON DELETE CASCADE
+                );
+                CREATE INDEX PublicVideoIndex ON PublicVideo (relevance DESC, view_count DESC);
+                """, MAX_BV_LENGTH, MAX_TITLE_LENGTH + MAX_DESCRIPTION_LENGTH + MAX_NAME_LENGTH);
+        jdbcTemplate.execute(createPublicVideoTable);
 
         log.info("End importing at " + new Timestamp(new Date().getTime()));
 
@@ -352,7 +360,7 @@ public class DatabaseServiceImpl implements DatabaseService {
         }
     }
 
-    @Async
+    @Async("taskExecutor")
     @Override
     public CompletableFuture<long[]> getFollowingAsync(long mid) {
         return CompletableFuture.supplyAsync(() -> getFollowing(mid));
@@ -365,7 +373,7 @@ public class DatabaseServiceImpl implements DatabaseService {
         return followeeList.stream().mapToLong(Long::longValue).toArray();
     }
 
-    @Async
+    @Async("taskExecutor")
     @Override
     public CompletableFuture<long[]> getFollowerAsync(long mid) {
         return CompletableFuture.supplyAsync(() -> getFollower(mid));
@@ -378,7 +386,7 @@ public class DatabaseServiceImpl implements DatabaseService {
         return followerList.stream().mapToLong(Long::longValue).toArray();
     }
 
-    @Async
+    @Async("taskExecutor")
     @Override
     public CompletableFuture<String[]> getWatchedAsync(long mid) {
         return CompletableFuture.supplyAsync(() -> getWatched(mid));
@@ -393,7 +401,7 @@ public class DatabaseServiceImpl implements DatabaseService {
         return bv;
     }
 
-    @Async
+    @Async("taskExecutor")
     @Override
     public CompletableFuture<String[]> getLikedAsync(long mid) {
         return CompletableFuture.supplyAsync(() -> getLiked(mid));
@@ -408,7 +416,7 @@ public class DatabaseServiceImpl implements DatabaseService {
         return bv;
     }
 
-    @Async
+    @Async("taskExecutor")
     @Override
     public CompletableFuture<String[]> getCollectedAsync(long mid) {
         return CompletableFuture.supplyAsync(() -> getCollected(mid));
@@ -423,7 +431,7 @@ public class DatabaseServiceImpl implements DatabaseService {
         return bv;
     }
 
-    @Async
+    @Async("taskExecutor")
     @Override
     public CompletableFuture<String[]> getPostedAsync(long mid) {
         return CompletableFuture.supplyAsync(() -> getPosted(mid));
@@ -442,7 +450,7 @@ public class DatabaseServiceImpl implements DatabaseService {
     public float getValidVideoDuration(String bv) {
         if (bv == null || bv.isEmpty())
             return -1;
-        String sql = "SELECT duration FROM Video WHERE bv = ? AND (public_time IS NULL OR public_time < LOCALTIMESTAMP)";
+        String sql = "SELECT duration FROM Video WHERE bv = ? AND public_time < LOCALTIMESTAMP";
         try {
             return Optional.ofNullable(jdbcTemplate.queryForObject(sql, Float.class, bv)).orElse(-1f);
         } catch (EmptyResultDataAccessException e) {
@@ -529,7 +537,7 @@ public class DatabaseServiceImpl implements DatabaseService {
         UserRecord.Identity identity = getUserIdentity(auth.getMid());
         if (identity == UserRecord.Identity.SUPERUSER)
             return false;
-        sql = "SELECT reviewer FROM Video WHERE bv = ? AND (public_time IS NULL OR public_time < LOCALTIMESTAMP)";
+        sql = "SELECT reviewer FROM Video WHERE bv = ? AND public_time < LOCALTIMESTAMP";
         long reviewer = Optional.ofNullable(jdbcTemplate.queryForObject(sql, Long.class, bv)).orElse(-1L);
         return reviewer <= 0;
     }
@@ -723,43 +731,6 @@ public class DatabaseServiceImpl implements DatabaseService {
     @SuppressWarnings("DuplicatedCode")
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
-    public void createUnloggedTable(long mid) {
-        String createPublicVideoTableConstrain = null;
-        if (lastUpdateTime == null)
-            createPublicVideoTableConstrain = """
-                    ALTER TABLE PublicVideo ADD PRIMARY KEY (bv);
-                    ALTER TABLE PublicVideo ADD FOREIGN KEY (bv) REFERENCES Video(bv) ON DELETE CASCADE;
-                    CREATE INDEX PublicVideoIndex ON PublicVideo (relevance DESC, view_count DESC);
-                    """;
-        String createPublicVideoTable = """
-                CREATE UNLOGGED TABLE IF NOT EXISTS PublicVideo AS
-                SELECT Video.bv AS bv, lower(CONCAT(Video.title, Video.description, UserProfile.name)) AS text, CountVideo.view_count AS view_count, 0 AS relevance
-                FROM Video
-                JOIN UserProfile ON Video.owner = UserProfile.mid
-                JOIN CountVideo ON Video.bv = CountVideo.bv
-                """;
-        String condition = """
-                                
-                WHERE Video.owner = ? OR Video.public_time < LOCALTIMESTAMP
-                """;
-        String selectTimestamp = "SELECT LOCALTIMESTAMP";
-        UserRecord.Identity identity = getUserIdentity(mid);
-        switch (identity) {
-            case USER:
-                jdbcTemplate.update(createPublicVideoTable + condition, mid);
-                break;
-            case SUPERUSER:
-                jdbcTemplate.update(createPublicVideoTable);
-                break;
-        }
-        lastUpdateTime = jdbcTemplate.queryForObject(selectTimestamp, Timestamp.class);
-        if (createPublicVideoTableConstrain != null)
-            jdbcTemplate.execute(createPublicVideoTableConstrain);
-    }
-
-    @SuppressWarnings("DuplicatedCode")
-    @Override
-    @Transactional(propagation = Propagation.MANDATORY)
     public void resetUnloggedTable(long mid) {
         String updateViewCount = """
                 UPDATE PublicVideo
@@ -777,7 +748,6 @@ public class DatabaseServiceImpl implements DatabaseService {
                 WHERE PublicVideo.bv IS NULL
                 """;
         String condition = " AND (Video.owner = ? OR Video.public_time < LOCALTIMESTAMP)";
-        String selectTimestamp = "SELECT LOCALTIMESTAMP";
         UserRecord.Identity identity = getUserIdentity(mid);
         switch (identity) {
             case USER:
@@ -787,7 +757,7 @@ public class DatabaseServiceImpl implements DatabaseService {
                             SELECT pv.bv
                             FROM PublicVideo pv
                             LEFT JOIN Video v ON pv.bv = v.bv
-                                AND (v.owner = ? OR (v.public_time IS NULL OR v.public_time < LOCALTIMESTAMP))
+                                AND (v.owner = ? OR v.public_time < LOCALTIMESTAMP)
                             WHERE v.bv IS NULL
                         )
                         """;
@@ -800,7 +770,6 @@ public class DatabaseServiceImpl implements DatabaseService {
                 jdbcTemplate.update(insertPublicVideoTable);
                 break;
         }
-        lastUpdateTime = jdbcTemplate.queryForObject(selectTimestamp, Timestamp.class);
     }
 
     @SuppressWarnings("DuplicatedCode")
@@ -852,21 +821,19 @@ public class DatabaseServiceImpl implements DatabaseService {
                 SELECT bv, text, view_count, relevance
                 FROM TempVideo
                 """;
-        String selectTimestamp = "SELECT LOCALTIMESTAMP";
         UserRecord.Identity identity = getUserIdentity(mid);
         if (identity == UserRecord.Identity.USER) {
             String deleteInvalidVideo = """
                     DELETE pv
                     FROM PublicVideo pv
                     LEFT JOIN Video v ON pv.bv = v.bv
-                        AND (v.owner = ? OR (v.public_time IS NULL OR v.public_time < LOCALTIMESTAMP))
+                        AND (v.owner = ? OR v.public_time < LOCALTIMESTAMP)
                     WHERE v.bv IS NULL
                     """;
             jdbcTemplate.update(deleteInvalidVideo, mid);
         }
         jdbcTemplate.update(updateViewCount);
         jdbcTemplate.update(mergeTemp);
-        lastUpdateTime = jdbcTemplate.queryForObject(selectTimestamp, Timestamp.class);
     }
 
     @Override
@@ -875,9 +842,8 @@ public class DatabaseServiceImpl implements DatabaseService {
         String updateRelevance = """
                 UPDATE PublicVideo
                 SET relevance = relevance + (length(text) - length(replace(text, ?, ''))) / length(?)
-                WHERE ture
                 """;
-        jdbcTemplate.update(updateRelevance, s, s, s);
+        jdbcTemplate.update(updateRelevance, s, s);
     }
 
     @Override
@@ -965,7 +931,7 @@ public class DatabaseServiceImpl implements DatabaseService {
                 JOIN Video v ON v.bv = vv.bv
                 JOIN UserProfile up ON v.owner = up.mid
                 WHERE
-                    excluded_videos.bv IS NULL AND (v.public_time IS NULL OR v.public_time < LOCALTIMESTAMP)
+                    excluded_videos.bv IS NULL AND v.public_time < LOCALTIMESTAMP
                 GROUP BY vv.bv, up.level, v.public_time
                 HAVING COUNT(vv.mid) > 0
                 ORDER BY
