@@ -294,9 +294,18 @@ public class DatabaseServiceImpl implements DatabaseService {
         }
         Pattern pattern = Pattern.compile("(\\d{1,2})月(\\d{1,2})日");
         String birthday = req.getBirthday();
-        Matcher matcher = pattern.matcher(birthday);
-        String birthday_month = birthday.isEmpty() ? null : matcher.group(1);
-        String birthday_day = birthday.isEmpty() ? null : matcher.group(2);
+        String birthday_month = null;
+        String birthday_day = null;
+        if (birthday != null && !birthday.isEmpty()) {
+            Matcher matcher = pattern.matcher(birthday);
+            if (!matcher.matches()) {
+                log.info("Mid: {}", mid);
+                log.error("Invalid birthday: {}", birthday);
+                throw new IllegalArgumentException("Invalid birthday");
+            }
+            birthday_month = matcher.group(1);
+            birthday_day = matcher.group(2);
+        }
         String escapeSign = escape(req.getSign());
         if (escapeSign.length() > MAX_SIGN_LENGTH) {
             log.info("Mid: {}", mid);
@@ -531,14 +540,24 @@ public class DatabaseServiceImpl implements DatabaseService {
     @Override
     public boolean isVideoNotEngage(AuthInfo auth, String bv) {
         String sql = "SELECT owner FROM Video WHERE bv = ?";
-        long ownerMid = Optional.ofNullable(jdbcTemplate.queryForObject(sql, Long.class, bv)).orElse(-1L);
+        long ownerMid;
+        try {
+            ownerMid = Optional.ofNullable(jdbcTemplate.queryForObject(sql, Long.class, bv)).orElse(-1L);
+        } catch (EmptyResultDataAccessException e) {
+            ownerMid = -1;
+        }
         if (ownerMid < 0 || ownerMid == auth.getMid())
             return true;
         UserRecord.Identity identity = getUserIdentity(auth.getMid());
         if (identity == UserRecord.Identity.SUPERUSER)
             return false;
         sql = "SELECT reviewer FROM Video WHERE bv = ? AND public_time < LOCALTIMESTAMP";
-        long reviewer = Optional.ofNullable(jdbcTemplate.queryForObject(sql, Long.class, bv)).orElse(-1L);
+        long reviewer;
+        try {
+            reviewer = Optional.ofNullable(jdbcTemplate.queryForObject(sql, Long.class, bv)).orElse(-1L);
+        } catch (EmptyResultDataAccessException e) {
+            reviewer = -1;
+        }
         return reviewer <= 0;
     }
 
@@ -613,13 +632,25 @@ public class DatabaseServiceImpl implements DatabaseService {
         if (bv == null || bv.isEmpty())
             return -1;
         String sql = "SELECT owner FROM Video WHERE bv = ?";
-        return Optional.ofNullable(jdbcTemplate.queryForObject(sql, Long.class, bv)).orElse(-1L);
+        long owner;
+        try {
+            owner = Optional.ofNullable(jdbcTemplate.queryForObject(sql, Long.class, bv)).orElse(-1L);
+        } catch (EmptyResultDataAccessException e) {
+            owner = -1;
+        }
+        return owner;
     }
 
     @Override
     public boolean isVideoReviewed(String bv) {
         String sql = "SELECT reviewer FROM Video WHERE bv = ?";
-        return Optional.ofNullable(jdbcTemplate.queryForObject(sql, Long.class, bv)).orElse(-1L) > 0;
+        long reviewer;
+        try {
+            reviewer = Optional.ofNullable(jdbcTemplate.queryForObject(sql, Long.class, bv)).orElse(-1L);
+        } catch (EmptyResultDataAccessException e) {
+            reviewer = -1;
+        }
+        return reviewer > 0;
     }
 
     @Override
@@ -690,9 +721,9 @@ public class DatabaseServiceImpl implements DatabaseService {
             log.error("Description is too long: {}", req.getDescription());
             throw new IllegalArgumentException("Description is too long");
         }
-        String sql = "INSERT INTO Video(bv, title, owner, commit_time, duration, description) VALUES (?, ?, ?, LOCALTIMESTAMP, ?, ?)";
+        String sql = "INSERT INTO Video(bv, title, owner, commit_time, duration, description, public_time) VALUES (?, ?, ?, LOCALTIMESTAMP, ?, ?, ?)";
         String bv = transformer.generateBV();
-        jdbcTemplate.update(sql, bv, escapeTitle, mid, req.getDuration(), escapeDescription);
+        jdbcTemplate.update(sql, bv, escapeTitle, mid, req.getDuration(), escapeDescription, req.getPublicTime());
         return bv;
     }
 
