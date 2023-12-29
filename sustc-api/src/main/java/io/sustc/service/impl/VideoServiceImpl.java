@@ -83,7 +83,7 @@ public class VideoServiceImpl implements VideoService {
 
     @Override
     @Transactional
-    public List<String> searchVideo(AuthInfo auth, String keywords, int pageSize, int pageNum) {
+    public synchronized List<String> searchVideo(AuthInfo auth, String keywords, int pageSize, int pageNum) {
         if (userService.invalidAuthInfo(auth))
             return null;
         if (pageSize <= 0 || pageNum <= 0) {
