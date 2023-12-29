@@ -740,7 +740,7 @@ public class DatabaseServiceImpl implements DatabaseService {
                 """;
         String condition = """
                                 
-                WHERE Video.owner = ? OR (Video.public_time IS NULL OR Video.public_time < LOCALTIMESTAMP)
+                WHERE Video.owner = ? OR Video.public_time < LOCALTIMESTAMP
                 """;
         String selectTimestamp = "SELECT LOCALTIMESTAMP";
         UserRecord.Identity identity = getUserIdentity(mid);
@@ -776,7 +776,7 @@ public class DatabaseServiceImpl implements DatabaseService {
                 JOIN CountVideo ON Video.bv = CountVideo.bv
                 WHERE PublicVideo.bv IS NULL
                 """;
-        String condition = " AND (Video.owner = ? OR (Video.public_time IS NULL OR Video.public_time < LOCALTIMESTAMP))";
+        String condition = " AND (Video.owner = ? OR Video.public_time < LOCALTIMESTAMP)";
         String selectTimestamp = "SELECT LOCALTIMESTAMP";
         UserRecord.Identity identity = getUserIdentity(mid);
         switch (identity) {
@@ -816,7 +816,7 @@ public class DatabaseServiceImpl implements DatabaseService {
                 LEFT JOIN PublicVideo ON Video.bv = PublicVideo.bv
                 WHERE PublicVideo.bv IS NULL
                 """;
-        String condition = " AND Video.owner = ? OR (Video.public_time IS NULL OR Video.public_time < LOCALTIMESTAMP)";
+        String condition = " AND (Video.owner = ? OR Video.public_time < LOCALTIMESTAMP)";
         UserRecord.Identity identity = getUserIdentity(mid);
         switch (identity) {
             case USER:

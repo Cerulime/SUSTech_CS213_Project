@@ -6,9 +6,6 @@ spring:
     hikari:
       connection-timeout: 30000
       maximum-pool-size: 10
-
-    hikari:
-      connection-timeout: 180000
       leak-detection-threshold: 120000
 
 logging:

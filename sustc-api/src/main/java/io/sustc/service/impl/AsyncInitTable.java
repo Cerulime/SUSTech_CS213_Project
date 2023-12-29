@@ -298,6 +298,7 @@ public class AsyncInitTable {
                 ALTER TABLE Video ALTER COLUMN owner SET NOT NULL;
                 ALTER TABLE Video ALTER COLUMN commit_time SET NOT NULL;
                 ALTER TABLE Video ALTER COLUMN duration SET NOT NULL;
+                ALTER TABLE Video ALTER COLUMN public_time SET NOT NULL;
                                 
                 ALTER TABLE Video ADD PRIMARY KEY (bv);
                 ALTER TABLE Video ADD FOREIGN KEY (owner) REFERENCES UserAuth(mid) ON DELETE CASCADE;

@@ -43,6 +43,6 @@ public class PostVideoReq implements Serializable {
     public boolean isInvalid() {
         return title == null || title.isEmpty() ||
                 !(duration >= 10) ||
-                (publicTime != null && !publicTime.after(Timestamp.valueOf(LocalDateTime.now())));
+                publicTime == null || !publicTime.after(Timestamp.valueOf(LocalDateTime.now()));
     }
 }
