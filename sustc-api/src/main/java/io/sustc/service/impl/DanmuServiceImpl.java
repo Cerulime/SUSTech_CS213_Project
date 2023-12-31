@@ -42,7 +42,7 @@ public class DanmuServiceImpl implements DanmuService {
             return -1;
         }
         if (time < 0 || time > duration) {
-            log.error("Invalid time: {}", time);
+            log.warn("Invalid time: {}", time);
             return -1;
         }
         if (databaseService.isVideoUnwatched(auth.getMid(), bv)) {
@@ -55,7 +55,7 @@ public class DanmuServiceImpl implements DanmuService {
     @Override
     public List<Long> displayDanmu(String bv, float timeStart, float timeEnd, boolean filter) {
         if (timeStart > timeEnd || timeStart < 0 || timeEnd < 0) {
-            log.error("Invalid time range: {} - {}", timeStart, timeEnd);
+            log.warn("Invalid time range: {} - {}", timeStart, timeEnd);
             return null;
         }
         float duration = databaseService.getValidVideoDuration(bv);
