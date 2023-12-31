@@ -275,6 +275,14 @@ public class DatabaseServiceImpl implements DatabaseService {
         }
     }
 
+    private Short parseShort(String s) {
+        try {
+            return Short.parseShort(s);
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public long insertUser(RegisterUserReq req) {
@@ -292,19 +300,26 @@ public class DatabaseServiceImpl implements DatabaseService {
             log.error("Name is too long: {}", req.getName());
             throw new IllegalArgumentException("Name is too long");
         }
-        Pattern pattern = Pattern.compile("(\\d{1,2})月(\\d{1,2})日");
         String birthday = req.getBirthday();
         String birthday_month = null;
         String birthday_day = null;
         if (birthday != null && !birthday.isEmpty()) {
+            Pattern pattern = Pattern.compile("(\\d{1,2})月(\\d{1,2})日");
             Matcher matcher = pattern.matcher(birthday);
             if (!matcher.matches()) {
-                log.info("Mid: {}", mid);
-                log.error("Invalid birthday: {}", birthday);
-                throw new IllegalArgumentException("Invalid birthday");
+                Pattern pattern2 = Pattern.compile("(\\d{1,2})-(\\d{1,2})");
+                Matcher matcher2 = pattern2.matcher(birthday);
+                if (!matcher2.matches()) {
+                    log.info("Mid: {}", mid);
+                    log.error("Invalid birthday: {}", birthday);
+                    throw new IllegalArgumentException("Invalid birthday");
+                }
+                birthday_month = matcher2.group(1);
+                birthday_day = matcher2.group(2);
+            } else {
+                birthday_month = matcher.group(1);
+                birthday_day = matcher.group(2);
             }
-            birthday_month = matcher.group(1);
-            birthday_day = matcher.group(2);
         }
         String escapeSign = escape(req.getSign());
         if (escapeSign.length() > MAX_SIGN_LENGTH) {
@@ -313,8 +328,8 @@ public class DatabaseServiceImpl implements DatabaseService {
             log.error("Sign is too long: {}", req.getSign());
             throw new IllegalArgumentException("Sign is too long");
         }
-        sql = "INSERT INTO UserProfile(mid, name, sex, birthday_month, birthday_day, level, coin, sign, identity) VALUES (?, ?, ?, ?, 1, 0, ?, ?::Identity)";
-        jdbcTemplate.update(sql, mid, escapeName, req.getSex(), birthday_month, birthday_day, escapeSign, UserRecord.Identity.USER.name());
+        sql = "INSERT INTO UserProfile(mid, name, sex, birthday_month, birthday_day, level, coin, sign, identity) VALUES (?, ?, ?::Gender, ?, ?, 1, 0, ?, ?::Identity)";
+        jdbcTemplate.update(sql, mid, escapeName, req.getSex().name(), parseShort(birthday_month), parseShort(birthday_day), escapeSign, UserRecord.Identity.USER.name());
         return mid;
     }
 
@@ -749,7 +764,7 @@ public class DatabaseServiceImpl implements DatabaseService {
                 .description(escape(req.getDescription()))
                 .publicTime(req.getPublicTime()).build();
         assert origin != null;
-        return !origin.equals(escapeReq) && origin.getDuration() == req.getDuration();
+        return !origin.isSame(escapeReq) && Math.abs(origin.getDuration() - req.getDuration()) < EPSILON;
     }
 
     @Override
@@ -989,7 +1004,6 @@ public class DatabaseServiceImpl implements DatabaseService {
                     AND uf.followee = ANY(ARRAY(SELECT followee FROM UserFollow WHERE follower = ?))
                     AND uf.follower NOT IN (SELECT followee FROM UserFollow WHERE follower = ?)
                 GROUP BY uf.follower, up.level
-                HAVING COUNT(uf.followee) > 1
                 ORDER BY common_followings DESC, up.level DESC, mid ASC
                 LIMIT ?
                 OFFSET ?

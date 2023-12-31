@@ -95,7 +95,7 @@ public class BenchmarkService {
 
         val startTime = System.currentTimeMillis();
         try {
-//            databaseService.importData(danmuRecords, userRecords, videoRecords);
+            databaseService.importData(danmuRecords, userRecords, videoRecords);
         } catch (Exception e) {
             log.error("Exception encountered during importing data, you may early stop this run", e);
         }
@@ -118,6 +118,7 @@ public class BenchmarkService {
                     pass.incrementAndGet();
                 } else {
                     log.debug("Wrong answer for {}: expected {}, got {}", it.getKey(), it.getValue(), res);
+                    System.exit(-1);
                 }
             } catch (Exception e) {
                 log.error("Exception thrown for {}", it, e);
@@ -141,6 +142,7 @@ public class BenchmarkService {
                     pass.incrementAndGet();
                 } else {
                     log.debug("Wrong answer for {}: expected {}, got {}", it.getKey(), it.getValue(), res);
+                    System.exit(-1);
                 }
             } catch (Exception e) {
                 log.error("Exception thrown for {}", it, e);
@@ -164,6 +166,7 @@ public class BenchmarkService {
                     pass.incrementAndGet();
                 } else {
                     log.debug("Wrong answer for {}: expected {}, got {}", it.getKey(), it.getValue(), res);
+                    System.exit(-1);
                 }
             } catch (Exception e) {
                 log.error("Exception thrown for {}", it, e);
@@ -187,6 +190,7 @@ public class BenchmarkService {
                     pass.incrementAndGet();
                 } else {
                     log.debug("Wrong answer for {}: expected {}, got {}", it.getKey(), it.getValue(), res);
+                    System.exit(-1);
                 }
             } catch (Exception e) {
                 log.error("Exception thrown for {}", it, e);
@@ -211,6 +215,7 @@ public class BenchmarkService {
                     pass.incrementAndGet();
                 } else {
                     log.debug("Wrong answer for {}: expected {}, got {}", it.getKey(), it.getValue(), res);
+                    System.exit(-1);
                 }
             } catch (Exception e) {
                 log.error("Exception thrown for {}", it, e);
@@ -235,6 +240,7 @@ public class BenchmarkService {
                     pass.incrementAndGet();
                 } else {
                     log.debug("Wrong answer for {}: expected {}, got {}", it.getKey(), it.getValue(), res);
+                    System.exit(-1);
                 }
             } catch (Exception e) {
                 log.error("Exception thrown for {}", it, e);
@@ -259,6 +265,7 @@ public class BenchmarkService {
                     pass.incrementAndGet();
                 } else {
                     log.debug("Wrong answer for {}: expected {}, got {}", it.getKey(), it.getValue(), res);
+                    System.exit(-1);
                 }
             } catch (Exception e) {
                 log.error("Exception thrown for {}", it, e);
@@ -284,6 +291,7 @@ public class BenchmarkService {
                     pass.incrementAndGet();
                 } else {
                     log.debug("Wrong answer for {}: expected size {}, got {}", it.getKey(), it.getValue(), resSize);
+                    System.exit(-1);
                 }
             } catch (Exception e) {
                 log.error("Exception thrown for {}", it, e);
@@ -310,12 +318,14 @@ public class BenchmarkService {
                         pass.incrementAndGet();
                     } else {
                         log.debug("Wrong answer for {}: expected >= 0, got {}", it.getKey(), res);
+                        System.exit(-1);
                     }
                 } else {
                     if (res < 0) {
                         pass.incrementAndGet();
                     } else {
                         log.debug("Wrong answer for {}: expected < 0, got {}", it.getKey(), res);
+                        System.exit(-1);
                     }
                 }
             } catch (Exception e) {
@@ -340,6 +350,7 @@ public class BenchmarkService {
                     pass.incrementAndGet();
                 } else {
                     log.debug("Wrong answer for {}: expected {}, got {}", it.getKey(), it.getValue(), res);
+                    System.exit(-1);
                 }
             } catch (Exception e) {
                 log.error("Exception thrown for {}", it.getKey(), e);
@@ -369,6 +380,7 @@ public class BenchmarkService {
                     pass.incrementAndGet();
                 } else {
                     log.debug("Wrong answer for {}: expected {}, got {}", it.getKey(), watched, res);
+                    System.exit(-1);
                 }
             } catch (Exception e) {
                 log.error("Exception thrown for {}", it.getKey(), e);
@@ -393,6 +405,7 @@ public class BenchmarkService {
                     pass.incrementAndGet();
                 } else {
                     log.debug("Wrong answer for {}: expected {}, got {}", it.getKey(), it.getValue(), res);
+                    System.exit(-1);
                 }
             } catch (Exception e) {
                 log.error("Exception thrown for {}", it, e);
@@ -417,6 +430,7 @@ public class BenchmarkService {
                     pass.incrementAndGet();
                 } else {
                     log.debug("Wrong answer for {}: expected {}, got {}", it.getKey(), it.getValue(), res);
+                    System.exit(-1);
                 }
             } catch (Exception e) {
                 log.error("Exception thrown for {}", it, e);
@@ -441,6 +455,7 @@ public class BenchmarkService {
                     pass.incrementAndGet();
                 } else {
                     log.debug("Wrong answer for {}: expected {}, got {}", it.getKey(), it.getValue(), res);
+                    System.exit(-1);
                 }
             } catch (Exception e) {
                 log.error("Exception thrown for {}", it, e);
@@ -467,12 +482,14 @@ public class BenchmarkService {
                         pass.incrementAndGet();
                     } else {
                         log.debug("Wrong answer for {}: expected not null, got null", it.getKey());
+                        System.exit(-1);
                     }
                 } else {
                     if (Objects.isNull(res)) {
                         pass.incrementAndGet();
                     } else {
                         log.debug("Wrong answer for {}: expected null, got {}", it.getKey(), res);
+                        System.exit(-1);
                     }
                 }
             } catch (Exception e) {
@@ -500,12 +517,14 @@ public class BenchmarkService {
                         pass.incrementAndGet();
                     } else {
                         log.debug("Wrong answer for {}: expected >= 0, got {}", it.getKey(), res);
+                        System.exit(-1);
                     }
                 } else {
                     if (res < 0) {
                         pass.incrementAndGet();
                     } else {
                         log.debug("Wrong answer for {}: expected < 0, got {}", it.getKey(), res);
+                        System.exit(-1);
                     }
                 }
             } catch (Exception e) {
@@ -531,6 +550,7 @@ public class BenchmarkService {
                     pass.incrementAndGet();
                 } else {
                     log.debug("Wrong answer for {}: expected {}, got {}", it.getKey(), it.getValue(), res);
+                    System.exit(-1);
                 }
             } catch (Exception e) {
                 log.error("Exception thrown for {}", it, e);
@@ -556,6 +576,7 @@ public class BenchmarkService {
                     pass.incrementAndGet();
                 } else {
                     log.debug("Wrong answer for {}: expected {}, got {}", it.getKey(), it.getValue(), res);
+                    System.exit(-1);
                 }
             } catch (Exception e) {
                 log.error("Exception thrown for {}", it, e);
@@ -568,6 +589,7 @@ public class BenchmarkService {
                     pass.incrementAndGet();
                 } else {
                     log.debug("Wrong answer for {}: expected true, got false", it);
+                    System.exit(-1);
                 }
             } catch (Exception e) {
                 log.error("Exception thrown for {}", it, e);
@@ -592,6 +614,7 @@ public class BenchmarkService {
                     pass.incrementAndGet();
                 } else {
                     log.debug("Wrong answer for {}: expected {}, got {}", it.getKey(), it.getValue(), res);
+                    System.exit(-1);
                 }
             } catch (Exception e) {
                 log.error("Exception thrown for {}", it, e);
@@ -617,6 +640,7 @@ public class BenchmarkService {
                     pass.incrementAndGet();
                 } else {
                     log.debug("Wrong answer for {}: expected true, got false", it);
+                    System.exit(-1);
                 }
             } catch (Exception e) {
                 log.error("Exception thrown for {}", it, e);
@@ -630,6 +654,7 @@ public class BenchmarkService {
                     pass.incrementAndGet();
                 } else {
                     log.debug("Wrong answer for {}: expected {}, got {}", it.getKey(), it.getValue(), res);
+                    System.exit(-1);
                 }
             } catch (Exception e) {
                 log.error("Exception thrown for {}", it, e);
@@ -655,6 +680,7 @@ public class BenchmarkService {
                     pass.incrementAndGet();
                 } else {
                     log.debug("Wrong answer for {}: expected true, got false", it);
+                    System.exit(-1);
                 }
             } catch (Exception e) {
                 log.error("Exception thrown for {}", it, e);
@@ -668,6 +694,7 @@ public class BenchmarkService {
                     pass.incrementAndGet();
                 } else {
                     log.debug("Wrong answer for {}: expected {}, got {}", it.getKey(), it.getValue(), res);
+                    System.exit(-1);
                 }
             } catch (Exception e) {
                 log.error("Exception thrown for {}", it, e);
@@ -692,6 +719,7 @@ public class BenchmarkService {
                     pass.incrementAndGet();
                 } else {
                     log.debug("Wrong answer for {}: expected {}, got {}", it.getKey(), it.getValue(), res);
+                    System.exit(-1);
                 }
             } catch (Exception e) {
                 log.error("Exception thrown for {}", it.getKey(), e);

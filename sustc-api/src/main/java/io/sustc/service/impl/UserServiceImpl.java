@@ -111,6 +111,10 @@ public class UserServiceImpl implements UserService {
             log.warn("Can not follow: {}", followeeMid);
             return false;
         }
+        if (auth.getMid() == followeeMid) {
+            log.warn("Can not follow yourself: {}", followeeMid);
+            return false;
+        }
         boolean isFollowed = databaseService.isFollowing(auth.getMid(), followeeMid);
         if (isFollowed)
             return !databaseService.unfollow(auth.getMid(), followeeMid);

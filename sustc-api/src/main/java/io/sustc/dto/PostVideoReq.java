@@ -1,5 +1,6 @@
 package io.sustc.dto;
 
+import io.sustc.service.DatabaseService;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -42,7 +43,15 @@ public class PostVideoReq implements Serializable {
 
     public boolean isInvalid() {
         return title == null || title.isEmpty() ||
-                !(duration >= 10) ||
-                publicTime == null || !publicTime.after(Timestamp.valueOf(LocalDateTime.now()));
+                duration < 10 ||
+                publicTime == null || publicTime.before(Timestamp.valueOf(LocalDateTime.now()));
+    }
+
+    public boolean isSame(PostVideoReq req) {
+        return title.equals(req.title) &&
+                description.equals(req.description) &&
+                Math.abs(duration - req.duration) < DatabaseService.EPSILON &&
+                publicTime.equals(req.publicTime);
+
     }
 }

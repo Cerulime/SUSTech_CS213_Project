@@ -603,10 +603,13 @@ public class AsyncInitTable {
         String setTriggers = """
                 CREATE OR REPLACE FUNCTION increase_view_count()
                 RETURNS TRIGGER AS $$
+                DECLARE
+                    video_duration REAL;
                 BEGIN
+                    SELECT duration INTO video_duration FROM Video WHERE bv = NEW.bv;
                     UPDATE CountVideo
                     SET view_count = view_count + 1,
-                        view_rate = view_rate + NEW.view_time / current_setting('sustc.temp_duration')::REAL
+                        view_rate = view_rate + NEW.view_time / video_duration
                     WHERE bv = NEW.bv;
                     RETURN NEW;
                 END;
@@ -619,10 +622,13 @@ public class AsyncInitTable {
                                 
                 CREATE OR REPLACE FUNCTION decrease_view_count()
                 RETURNS TRIGGER AS $$
+                DECLARE
+                    video_duration REAL;
                 BEGIN
+                    SELECT duration INTO video_duration FROM Video WHERE bv = OLD.bv;
                     UPDATE CountVideo
                     SET view_count = view_count - 1,
-                        view_rate = view_rate - OLD.view_time / current_setting('sustc.temp_duration')::REAL
+                        view_rate = view_rate - OLD.view_time / video_duration
                     WHERE bv = OLD.bv;
                     RETURN OLD;
                 END;

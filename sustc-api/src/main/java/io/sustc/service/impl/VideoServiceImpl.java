@@ -74,11 +74,17 @@ public class VideoServiceImpl implements VideoService {
             log.warn("User {} is not allowed to update video {}", auth.getMid(), bv);
             return false;
         }
-        if (databaseService.isNewInfoValid(bv, req)) {
+        if (!databaseService.isNewInfoValid(bv, req)) {
             log.warn("Invalid new video info: {}", req);
             return false;
         }
-        return databaseService.updateVideoInfo(bv, req);
+        boolean isReviewed = databaseService.isVideoReviewed(bv);
+        boolean res = databaseService.updateVideoInfo(bv, req);
+        if (!res) {
+            log.error("Failed to update video info: {}", req);
+            throw new RuntimeException("Failed to update video info");
+        }
+        return isReviewed;
     }
 
     @Override

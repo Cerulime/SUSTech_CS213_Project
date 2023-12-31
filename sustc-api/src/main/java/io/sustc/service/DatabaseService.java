@@ -50,7 +50,7 @@ public interface DatabaseService {
 
     boolean ALLOW_TRUNCATE = false;
     int MAX_PASSWORD_LENGTH = 63;
-    int MAX_QQ_LENGTH = 12;
+    int MAX_QQ_LENGTH = 25;
     int MAX_WECHAT_LENGTH = 25;
 
     int MAX_NAME_LENGTH = 25;
@@ -63,6 +63,8 @@ public interface DatabaseService {
     int MAX_CONTENT_LENGTH = 300;
     int NORMAL_BATCH_SIZE = 1000;
     int BIG_BATCH_SIZE = 10000;
+
+    float EPSILON = 1e-6f;
 
     AuthInfo getAuthInfo(long mid);
 
