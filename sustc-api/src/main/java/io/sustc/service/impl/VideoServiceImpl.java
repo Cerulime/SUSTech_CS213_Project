@@ -58,8 +58,10 @@ public class VideoServiceImpl implements VideoService {
             return false;
         }
         UserRecord.Identity identity = databaseService.getUserIdentity(auth.getMid());
-        if (identity == UserRecord.Identity.SUPERUSER || owner == auth.getMid())
-            return databaseService.deleteVideo(bv);
+        if (identity == UserRecord.Identity.SUPERUSER || owner == auth.getMid()) {
+            new Thread(() -> databaseService.deleteVideo(bv)).start();
+            return true;
+        }
         log.warn("User {} is not allowed to delete video {}", auth.getMid(), bv);
         return false;
     }

@@ -258,7 +258,7 @@ public class AsyncInitTable {
                 AFTER DELETE ON UserFollow
                 FOR EACH ROW EXECUTE FUNCTION delete_user_friends();
                 """;
-        jdbcTemplate.execute(setTrigger);
+//        jdbcTemplate.execute(setTrigger);
         log.info("Finish initializing UserFollow table");
     }
 
@@ -480,7 +480,7 @@ public class AsyncInitTable {
                 FOR EACH ROW
                 EXECUTE PROCEDURE calc_score();
                 """;
-        jdbcTemplate.execute(setTrigger);
+//        jdbcTemplate.execute(setTrigger);
         log.info("Finish initializing CountVideo table");
     }
 
@@ -708,7 +708,7 @@ public class AsyncInitTable {
                 FOR EACH ROW
                 EXECUTE PROCEDURE decrease_view_count();
                 """;
-        jdbcTemplate.execute(setTriggers);
+//        jdbcTemplate.execute(setTriggers);
         log.info("Finish initializing ViewVideo table");
     }
 
@@ -875,7 +875,7 @@ public class AsyncInitTable {
                 .replace("${TYPE}", type)
                 .replace("${TABLE}", table);
         //noinspection SqlSourceToSinkFlow
-        jdbcTemplate.execute(setTriggers);
+//        jdbcTemplate.execute(setTriggers);
     }
 
     //    @Transactional(propagation = Propagation.MANDATORY)

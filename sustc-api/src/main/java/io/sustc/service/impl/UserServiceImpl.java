@@ -90,18 +90,18 @@ public class UserServiceImpl implements UserService {
             return false;
         }
         UserRecord.Identity authIdentity = databaseService.getUserIdentity(auth.getMid());
-        UserRecord.Identity midIdentity = databaseService.getUserIdentity(mid);
         if (authIdentity == UserRecord.Identity.USER &&
                 auth.getMid() != mid) {
             log.warn("Insufficient privilege: {}", auth);
             return false;
         }
-        if (authIdentity == UserRecord.Identity.SUPERUSER &&
-                midIdentity == UserRecord.Identity.SUPERUSER && auth.getMid() != mid) {
+        if (authIdentity == UserRecord.Identity.SUPERUSER && auth.getMid() != mid &&
+                databaseService.getUserIdentity(mid) == UserRecord.Identity.SUPERUSER) {
             log.warn("Insufficient privilege: {}", auth);
             return false;
         }
-        return databaseService.deleteUser(mid);
+        new Thread(() -> databaseService.deleteUser(mid)).start();
+        return true;
     }
 
     @Override

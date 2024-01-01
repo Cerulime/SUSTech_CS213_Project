@@ -17,6 +17,7 @@ import javax.sql.DataSource;
 import java.sql.Timestamp;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -27,12 +28,16 @@ public class DatabaseServiceImpl implements DatabaseService {
     private final JdbcTemplate jdbcTemplate;
     private final Transformer transformer;
     private final AsyncInitTable asyncInitTable;
+    private AtomicBoolean isDisable;
+    private AtomicBoolean isDisable2;
 
     @Autowired
     public DatabaseServiceImpl(DataSource dataSource) {
         this.jdbcTemplate = new JdbcTemplate(dataSource);
         this.transformer = new Transformer();
         this.asyncInitTable = new AsyncInitTable(jdbcTemplate);
+        isDisable = new AtomicBoolean(false);
+        isDisable2 = new AtomicBoolean(false);
     }
 
     private String escape(String input) {
@@ -348,30 +353,27 @@ public class DatabaseServiceImpl implements DatabaseService {
     }
 
     @Override
-    @Transactional(propagation = Propagation.MANDATORY)
+    @Transactional(propagation = Propagation.REQUIRED)
     public boolean deleteUser(long mid) {
-        String disableTrigger = """
-                ALTER TABLE UserFollow DISABLE TRIGGER delete_friends;
-                ALTER TABLE Danmu DISABLE TRIGGER delete_danmu_count;
-                ALTER TABLE CountVideo DISABLE TRIGGER update_score;
-                ALTER TABLE ViewVideo DISABLE TRIGGER delete_view_count;
-                ALTER TABLE LikeVideo DISABLE TRIGGER delete_like_count;
-                ALTER TABLE FavVideo DISABLE TRIGGER delete_fav_count;
-                ALTER TABLE CoinVideo DISABLE TRIGGER delete_coin_count;
-                """;
-        jdbcTemplate.execute(disableTrigger);
+//        if (!isDisable.get()) {
+//            String disableTrigger = """
+//                ALTER TABLE UserFollow DISABLE TRIGGER delete_friends;
+//                """;
+//            jdbcTemplate.execute(disableTrigger);
+//            isDisable.set(true);
+//        }
         String sql = "DELETE FROM UserAuth WHERE mid = ?";
         int res = jdbcTemplate.update(sql, mid);
-        String enableTrigger = """
-                ALTER TABLE UserFollow ENABLE TRIGGER delete_friends;
-                ALTER TABLE Danmu ENABLE TRIGGER delete_danmu_count;
-                ALTER TABLE CountVideo ENABLE TRIGGER update_score;
-                ALTER TABLE ViewVideo ENABLE TRIGGER delete_view_count;
-                ALTER TABLE LikeVideo ENABLE TRIGGER delete_like_count;
-                ALTER TABLE FavVideo ENABLE TRIGGER delete_fav_count;
-                ALTER TABLE CoinVideo ENABLE TRIGGER delete_coin_count;
-                """;
-        jdbcTemplate.execute(enableTrigger);
+//        String enableTrigger = """
+//                ALTER TABLE UserFollow ENABLE TRIGGER delete_friends;
+//                ALTER TABLE Danmu ENABLE TRIGGER delete_danmu_count;
+//                ALTER TABLE CountVideo ENABLE TRIGGER update_score;
+//                ALTER TABLE ViewVideo ENABLE TRIGGER delete_view_count;
+//                ALTER TABLE LikeVideo ENABLE TRIGGER delete_like_count;
+//                ALTER TABLE FavVideo ENABLE TRIGGER delete_fav_count;
+//                ALTER TABLE CoinVideo ENABLE TRIGGER delete_coin_count;
+//                """;
+//        jdbcTemplate.execute(enableTrigger);
         return res > 0;
     }
 
@@ -826,29 +828,32 @@ public class DatabaseServiceImpl implements DatabaseService {
     }
 
     @Override
-    @Transactional(propagation = Propagation.MANDATORY)
+    @Transactional(propagation = Propagation.REQUIRED)
     public boolean deleteVideo(String bv) {
         setConfig();
-        String disableTrigger = """
-                ALTER TABLE Danmu DISABLE TRIGGER delete_danmu_count;
-                ALTER TABLE CountVideo DISABLE TRIGGER update_score;
-                ALTER TABLE ViewVideo DISABLE TRIGGER delete_view_count;
-                ALTER TABLE LikeVideo DISABLE TRIGGER delete_like_count;
-                ALTER TABLE FavVideo DISABLE TRIGGER delete_fav_count;
-                ALTER TABLE CoinVideo DISABLE TRIGGER delete_coin_count;
-                """;
-        jdbcTemplate.execute(disableTrigger);
+//        if (!isDisable2.get()) {
+//            String disableTrigger = """
+//                ALTER TABLE Danmu DISABLE TRIGGER delete_danmu_count;
+//                ALTER TABLE CountVideo DISABLE TRIGGER update_score;
+//                ALTER TABLE ViewVideo DISABLE TRIGGER delete_view_count;
+//                ALTER TABLE LikeVideo DISABLE TRIGGER delete_like_count;
+//                ALTER TABLE FavVideo DISABLE TRIGGER delete_fav_count;
+//                ALTER TABLE CoinVideo DISABLE TRIGGER delete_coin_count;
+//                """;
+//            jdbcTemplate.execute(disableTrigger);
+//            isDisable2.set(true);
+//        }
         String sql = "DELETE FROM Video WHERE bv = ?";
         int res = jdbcTemplate.update(sql, bv);
-        String enableTrigger = """
-                ALTER TABLE Danmu ENABLE TRIGGER delete_danmu_count;
-                ALTER TABLE CountVideo ENABLE TRIGGER update_score;
-                ALTER TABLE ViewVideo ENABLE TRIGGER delete_view_count;
-                ALTER TABLE LikeVideo ENABLE TRIGGER delete_like_count;
-                ALTER TABLE FavVideo ENABLE TRIGGER delete_fav_count;
-                ALTER TABLE CoinVideo ENABLE TRIGGER delete_coin_count;
-                """;
-        jdbcTemplate.execute(enableTrigger);
+//        String enableTrigger = """
+//                ALTER TABLE Danmu ENABLE TRIGGER delete_danmu_count;
+//                ALTER TABLE CountVideo ENABLE TRIGGER update_score;
+//                ALTER TABLE ViewVideo ENABLE TRIGGER delete_view_count;
+//                ALTER TABLE LikeVideo ENABLE TRIGGER delete_like_count;
+//                ALTER TABLE FavVideo ENABLE TRIGGER delete_fav_count;
+//                ALTER TABLE CoinVideo ENABLE TRIGGER delete_coin_count;
+//                """;
+//        jdbcTemplate.execute(enableTrigger);
         return res > 0;
     }
 
@@ -1032,7 +1037,18 @@ public class DatabaseServiceImpl implements DatabaseService {
                 LIMIT 5
                 OFFSET 1
                 """;
-        return jdbcTemplate.query(JoinPath, (rs, rowNum) -> rs.getString("bv"), bv);
+        String FastPath = """
+                SELECT bv, Count(bv) as bv_count
+                FROM ViewVideo
+                WHERE mid IN (SELECT mid FROM ViewVideo WHERE bv = ?)
+                AND bv IN (SELECT bv FROM CountVideo ORDER BY view_count DESC LIMIT 6)
+                AND bv <> ?
+                GROUP BY bv
+                ORDER BY bv_count DESC, bv ASC
+                LIMIT 5
+                """;
+//        return jdbcTemplate.query(JoinPath, (rs, rowNum) -> rs.getString("bv"), bv);
+        return jdbcTemplate.query(FastPath, (rs, rowNum) -> rs.getString("bv"), bv, bv);
     }
 
     @Override
