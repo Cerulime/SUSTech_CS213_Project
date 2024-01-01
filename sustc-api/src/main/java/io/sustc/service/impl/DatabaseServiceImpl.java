@@ -47,6 +47,18 @@ public class DatabaseServiceImpl implements DatabaseService {
         return List.of(12212224);
     }
 
+    private void setConfig() {
+        String config = """
+                SET work_mem = '256MB';
+                SET maintenance_work_mem = '1.5GB';
+                SET effective_cache_size = '4GB';
+                SET temp_buffers = '256MB';
+                SET default_statistics_target = 500;
+                SET max_parallel_workers_per_gather = 8;
+                """;
+        jdbcTemplate.execute(config);
+    }
+
     @Override
     public void importData(
             List<DanmuRecord> danmuRecords,
@@ -79,16 +91,7 @@ public class DatabaseServiceImpl implements DatabaseService {
                 """;
         jdbcTemplate.execute(createGenderEnum);
 
-        String config = """
-                SET work_mem = '256MB';
-                SET maintenance_work_mem = '1.5GB';
-                SET effective_cache_size = '4GB';
-                SET temp_buffers = '256MB';
-                SET default_statistics_target = 500;
-                SET max_parallel_workers_per_gather = 8;
-                """;
-
-        jdbcTemplate.execute(config);
+        setConfig();
 
         CompletableFuture<Void> future1 = asyncInitTable.initUserAuthTableAsync(userRecords);
         CompletableFuture<Void> future2 = future1.thenComposeAsync(aVoid -> CompletableFuture.allOf(
@@ -528,6 +531,7 @@ public class DatabaseServiceImpl implements DatabaseService {
 
     @Override
     public List<Long> getDanmuFiltered(String bv, float timeStart, float timeEnd) {
+        setConfig();
         String sql = """
                 SELECT DISTINCT ON (content) id
                 FROM Danmu WHERE bv = ? AND dis_time BETWEEN ? AND ?
@@ -734,6 +738,7 @@ public class DatabaseServiceImpl implements DatabaseService {
 
     @Override
     public Set<Integer> getHotspot(String bv) {
+        setConfig();
         String sql = "SELECT hotspot FROM get_hotspot(?)";
         return new HashSet<>(jdbcTemplate.queryForList(sql, Integer.class, bv));
     }
@@ -802,6 +807,7 @@ public class DatabaseServiceImpl implements DatabaseService {
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public boolean deleteVideo(String bv) {
+        setConfig();
         String disableTrigger = """
                 ALTER TABLE Danmu DISABLE TRIGGER delete_danmu_count;
                 ALTER TABLE CountVideo DISABLE TRIGGER update_score;
@@ -862,6 +868,7 @@ public class DatabaseServiceImpl implements DatabaseService {
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public void resetUnloggedTable(long mid) {
+        setConfig();
         String updateViewCount = """
                 UPDATE PublicVideo
                 SET view_count = CountVideo.view_count, relevance = 0
@@ -906,6 +913,7 @@ public class DatabaseServiceImpl implements DatabaseService {
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public void createTempTable(long mid) {
+        setConfig();
         String createTempTable = """
                 CREATE TEMP TABLE TempVideo AS
                 SELECT Video.bv AS bv, lower(CONCAT(Video.title, Video.description, UserProfile.name)) AS text, CountVideo.view_count AS view_count, 0 AS relevance
@@ -930,6 +938,7 @@ public class DatabaseServiceImpl implements DatabaseService {
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public void updateRelevanceTemp(String s) {
+        setConfig();
         String updateRelevanceTemp = """
                 UPDATE TempVideo
                 SET relevance = relevance + (length(text) - length(replace(text, ?, ''))) / length(?);
@@ -940,6 +949,7 @@ public class DatabaseServiceImpl implements DatabaseService {
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public void mergeTemp(long mid) {
+        setConfig();
         String updateViewCount = """
                 UPDATE PublicVideo
                 SET view_count = CountVideo.view_count
@@ -969,6 +979,7 @@ public class DatabaseServiceImpl implements DatabaseService {
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public void updateRelevance(String s) {
+        setConfig();
         String updateRelevance = """
                 UPDATE PublicVideo
                 SET relevance = relevance + (length(text) - length(replace(text, ?, ''))) / length(?)
@@ -992,6 +1003,7 @@ public class DatabaseServiceImpl implements DatabaseService {
 
     @Override
     public List<String> getTopVideos(String bv) {
+        setConfig();
         String JoinPath = """
                 SELECT v1.bv, Count(v1.bv) as bv_count
                 FROM ViewVideo v1
@@ -1018,6 +1030,7 @@ public class DatabaseServiceImpl implements DatabaseService {
 
     @Override
     public List<String> getRecVideosForUser(long mid, int pageSize, int pageNum) {
+        setConfig();
         String sql = """
                 SELECT vv.bv, COUNT(vv.mid) AS view_count, up.level, v.public_time
                 FROM (
@@ -1051,6 +1064,7 @@ public class DatabaseServiceImpl implements DatabaseService {
 
     @Override
     public List<Long> getRecFriends(long mid, int pageSize, int pageNum) {
+        setConfig();
         String sql = """
                 SELECT
                     uf.follower AS mid,
