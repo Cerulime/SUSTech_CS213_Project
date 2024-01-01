@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.io.Reader;
 import java.io.StringReader;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -222,9 +223,6 @@ public class AsyncInitTable {
             copyInsertion(copyData.toString(), copySql);
         }
         String createUserFollowTableConstraint = """
-                ALTER TABLE UserFollow ALTER COLUMN follower SET NOT NULL;
-                ALTER TABLE UserFollow ALTER COLUMN followee SET NOT NULL;
-                                
                 ALTER TABLE UserFollow ADD PRIMARY KEY (follower, followee);
                 ALTER TABLE UserFollow ADD FOREIGN KEY (follower) REFERENCES UserAuth(mid) ON DELETE CASCADE;
                 ALTER TABLE UserFollow ADD FOREIGN KEY (followee) REFERENCES UserAuth(mid) ON DELETE CASCADE;
@@ -232,7 +230,77 @@ public class AsyncInitTable {
                 CREATE INDEX UserFolloweeIndex ON UserFollow(followee);
                 """;
         jdbcTemplate.execute(createUserFollowTableConstraint);
+        String setTrigger = """
+                CREATE OR REPLACE FUNCTION insert_user_friends() RETURNS TRIGGER AS $$
+                BEGIN
+                    IF EXISTS (SELECT 1 FROM UserFollow WHERE follower = NEW.followee AND followee = NEW.follower) THEN
+                        INSERT INTO UserFriends (mid, friend) VALUES (NEW.follower, NEW.followee);
+                        INSERT INTO UserFriends (mid, friend) VALUES (NEW.followee, NEW.follower);
+                    END IF;
+                    RETURN NEW;
+                END;
+                $$ LANGUAGE plpgsql;
+                                
+                CREATE TRIGGER insert_friends
+                AFTER INSERT ON UserFollow
+                FOR EACH ROW EXECUTE FUNCTION insert_user_friends();
+                                
+                CREATE OR REPLACE FUNCTION delete_user_friends() RETURNS TRIGGER AS $$
+                BEGIN
+                    DELETE FROM UserFriends
+                    WHERE (mid = OLD.follower AND friend = OLD.followee)
+                       OR (mid = OLD.followee AND friend = OLD.follower);
+                    RETURN OLD;
+                END;
+                $$ LANGUAGE plpgsql;
+                                
+                CREATE TRIGGER delete_friends
+                AFTER DELETE ON UserFollow
+                FOR EACH ROW EXECUTE FUNCTION delete_user_friends();
+                """;
+        jdbcTemplate.execute(setTrigger);
         log.info("Finish initializing UserFollow table");
+    }
+
+    @Async("taskExecutor")
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public CompletableFuture<Void> initUserFriendsTableAsync(List<UserRecord> userRecords) {
+        return CompletableFuture.runAsync(() -> initUserFriendsTable(userRecords));
+    }
+
+    public void initUserFriendsTable(List<UserRecord> userRecords) {
+        String createUserFriendsTable = """
+                CREATE UNLOGGED TABLE IF NOT EXISTS UserFriends(
+                    mid BIGINT,
+                    friend BIGINT
+                );
+                """;
+        jdbcTemplate.execute(createUserFriendsTable);
+        Map<Long, HashSet<Long>> relation = userRecords.parallelStream().map(user -> {
+            HashSet<Long> following = new HashSet<>();
+            for (long followee : user.getFollowing())
+                following.add(followee);
+            return Map.entry(user.getMid(), following);
+        }).filter(entry -> !entry.getValue().isEmpty()).collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+        String copyData = relation.entrySet().parallelStream().map(entry -> {
+            StringBuilder sb = new StringBuilder();
+            long mid = entry.getKey();
+            for (long followee : entry.getValue()) {
+                if (relation.containsKey(followee) && relation.get(followee).contains(mid)) {
+                    sb.append(mid).append('\t').append(followee).append('\n');
+                }
+            }
+            return sb.toString();
+        }).collect(Collectors.joining());
+        String copySql = "COPY UserFriends(mid, friend) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t')";
+        copyInsertion(copyData, copySql);
+        String createUserFriendsTableConstraint = """
+                ALTER TABLE UserFriends ADD PRIMARY KEY (mid, friend);
+                ALTER TABLE UserFriends ADD FOREIGN KEY (mid) REFERENCES UserAuth(mid) ON DELETE CASCADE;
+                ALTER TABLE UserFriends ADD FOREIGN KEY (friend) REFERENCES UserAuth(mid) ON DELETE CASCADE;
+                """;
+        jdbcTemplate.execute(createUserFriendsTableConstraint);
+        log.info("Finish initializing UserFriends table");
     }
 
     @Async("taskExecutor")

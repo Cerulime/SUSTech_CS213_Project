@@ -96,7 +96,8 @@ public class DatabaseServiceImpl implements DatabaseService {
         CompletableFuture<Void> future1 = asyncInitTable.initUserAuthTableAsync(userRecords);
         CompletableFuture<Void> future2 = future1.thenComposeAsync(aVoid -> CompletableFuture.allOf(
                 asyncInitTable.initUserProfileTableAsync(userRecords),
-                asyncInitTable.initUserFollowTableAsync(userRecords)
+                asyncInitTable.initUserFollowTableAsync(userRecords),
+                asyncInitTable.initUserFriendsTableAsync(userRecords)
         ));
         CompletableFuture<Void> future3 = future1.thenComposeAsync(aVoid -> CompletableFuture.allOf(
                 asyncInitTable.initVideoTableAsync(videoRecords)
@@ -349,8 +350,29 @@ public class DatabaseServiceImpl implements DatabaseService {
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public boolean deleteUser(long mid) {
+        String disableTrigger = """
+                ALTER TABLE UserFollow DISABLE TRIGGER delete_friends;
+                ALTER TABLE Danmu DISABLE TRIGGER delete_danmu_count;
+                ALTER TABLE CountVideo DISABLE TRIGGER update_score;
+                ALTER TABLE ViewVideo DISABLE TRIGGER delete_view_count;
+                ALTER TABLE LikeVideo DISABLE TRIGGER delete_like_count;
+                ALTER TABLE FavVideo DISABLE TRIGGER delete_fav_count;
+                ALTER TABLE CoinVideo DISABLE TRIGGER delete_coin_count;
+                """;
+        jdbcTemplate.execute(disableTrigger);
         String sql = "DELETE FROM UserAuth WHERE mid = ?";
-        return jdbcTemplate.update(sql, mid) > 0;
+        int res = jdbcTemplate.update(sql, mid);
+        String enableTrigger = """
+                ALTER TABLE UserFollow ENABLE TRIGGER delete_friends;
+                ALTER TABLE Danmu ENABLE TRIGGER delete_danmu_count;
+                ALTER TABLE CountVideo ENABLE TRIGGER update_score;
+                ALTER TABLE ViewVideo ENABLE TRIGGER delete_view_count;
+                ALTER TABLE LikeVideo ENABLE TRIGGER delete_like_count;
+                ALTER TABLE FavVideo ENABLE TRIGGER delete_fav_count;
+                ALTER TABLE CoinVideo ENABLE TRIGGER delete_coin_count;
+                """;
+        jdbcTemplate.execute(enableTrigger);
+        return res > 0;
     }
 
     @Override
@@ -738,7 +760,6 @@ public class DatabaseServiceImpl implements DatabaseService {
 
     @Override
     public Set<Integer> getHotspot(String bv) {
-        setConfig();
         String sql = "SELECT hotspot FROM get_hotspot(?)";
         return new HashSet<>(jdbcTemplate.queryForList(sql, Integer.class, bv));
     }
@@ -938,7 +959,6 @@ public class DatabaseServiceImpl implements DatabaseService {
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public void updateRelevanceTemp(String s) {
-        setConfig();
         String updateRelevanceTemp = """
                 UPDATE TempVideo
                 SET relevance = relevance + (length(text) - length(replace(text, ?, ''))) / length(?);
@@ -979,7 +999,6 @@ public class DatabaseServiceImpl implements DatabaseService {
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public void updateRelevance(String s) {
-        setConfig();
         String updateRelevance = """
                 UPDATE PublicVideo
                 SET relevance = relevance + (length(text) - length(replace(text, ?, ''))) / length(?)
@@ -1034,14 +1053,11 @@ public class DatabaseServiceImpl implements DatabaseService {
         String sql = """
                 SELECT vv.bv, COUNT(vv.mid) AS view_count, up.level, v.public_time
                 FROM (
-                    SELECT uf1.followee AS mid
-                    FROM UserFollow uf1
-                    JOIN UserFollow uf2
-                        ON uf1.follower = uf2.followee
-                        AND uf1.followee = uf2.follower
-                    WHERE uf1.follower = ?
+                    SELECT friend
+                    FROM UserFriends
+                    WHERE mid = ?
                 ) AS friends
-                JOIN ViewVideo vv ON friends.mid = vv.mid
+                JOIN ViewVideo vv ON friends.friend = vv.mid
                 LEFT JOIN (
                     SELECT bv
                     FROM ViewVideo

@@ -237,6 +237,7 @@ public class BenchmarkService {
             try {
                 val args = it.getKey();
                 val res = recommenderService.recommendVideosForUser((AuthInfo) args[0], (int) args[1], (int) args[2]);
+                log.info("{}", args);
                 if (collectionEquals(it.getValue(), res)) {
                     pass.incrementAndGet();
                 } else {
