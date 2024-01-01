@@ -196,8 +196,6 @@ public interface DatabaseService {
 
     List<String> getRecVideos(int pageSize, int pageNum);
 
-    boolean isInterestsExist(long mid);
-
     List<String> getRecVideosForUser(long mid, int pageSize, int pageNum);
 
     List<Long> getRecFriends(long mid, int pageSize, int pageNum);

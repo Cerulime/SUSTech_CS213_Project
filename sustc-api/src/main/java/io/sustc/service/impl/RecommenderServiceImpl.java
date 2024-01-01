@@ -49,10 +49,20 @@ public class RecommenderServiceImpl implements RecommenderService {
             log.warn("Invalid pageSize {} or pageNum {}", pageSize, pageNum);
             return null;
         }
-        if (databaseService.isInterestsExist(auth.getMid()))
-            return databaseService.getRecVideosForUser(auth.getMid(), pageSize, pageNum);
-        else
+        List<String> result = databaseService.getRecVideosForUser(auth.getMid(), pageSize, pageNum);
+        if (result == null || result.isEmpty())
             return databaseService.getRecVideos(pageSize, pageNum);
+        else {
+            int start = (pageNum - 1) * pageSize;
+            int end = Math.min(pageNum * pageSize, result.size());
+            if (start >= end)
+                return null;
+            return result.subList(start, end);
+        }
+//        if (databaseService.isInterestsExist(auth.getMid()))
+//            return databaseService.getRecVideosForUser(auth.getMid(), pageSize, pageNum);
+//        else
+//            return databaseService.getRecVideos(pageSize, pageNum);
     }
 
     @Override

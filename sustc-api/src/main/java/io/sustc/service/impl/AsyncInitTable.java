@@ -99,7 +99,8 @@ public class AsyncInitTable {
                 ALTER TABLE UserAuth ADD CONSTRAINT UniqueQq UNIQUE (qq);
                 ALTER TABLE UserAuth ADD CONSTRAINT UniqueWechat UNIQUE (wechat);
                                 
-                CREATE INDEX UserAuthQqWechatIndex ON UserAuth (qq, wechat);
+                CREATE INDEX UserAuthQqIndex ON UserAuth (qq);
+                CREATE INDEX UserAuthWechatIndex ON UserAuth (wechat);
                 """;
         jdbcTemplate.execute(createUserAuthTableConstraint);
         log.info("Finish initializing UserAuth table");

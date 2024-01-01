@@ -247,7 +247,7 @@ public class DatabaseServiceImpl implements DatabaseService {
 
     @Override
     public boolean isMidNotExist(long mid) {
-        String sql = "SELECT mid FROM UserAuth WHERE mid = ?";
+        String sql = "SELECT 1 FROM UserAuth WHERE mid = ?";
         try {
             return jdbcTemplate.queryForObject(sql, Long.class, mid) == null;
         } catch (EmptyResultDataAccessException e) {
@@ -257,7 +257,7 @@ public class DatabaseServiceImpl implements DatabaseService {
 
     @Override
     public boolean isQQorWechatExist(String qq, String wechat) {
-        String sql = "SELECT mid FROM UserAuth WHERE qq = ? OR wechat = ?";
+        String sql = "SELECT 1 FROM UserAuth WHERE qq = ? OR wechat = ?";
         try {
             return jdbcTemplate.queryForObject(sql, Long.class, qq, wechat) != null;
         } catch (EmptyResultDataAccessException e) {
@@ -267,7 +267,7 @@ public class DatabaseServiceImpl implements DatabaseService {
 
     @Override
     public boolean isNameExist(String name) {
-        String sql = "SELECT mid FROM UserProfile WHERE name = ?";
+        String sql = "SELECT 1 FROM UserProfile WHERE name = ?";
         try {
             return jdbcTemplate.queryForObject(sql, Long.class, escape(name)) != null;
         } catch (EmptyResultDataAccessException e) {
@@ -352,7 +352,7 @@ public class DatabaseServiceImpl implements DatabaseService {
 
     @Override
     public boolean isFollowing(long followerMid, long followeeMid) {
-        String sql = "SELECT follower FROM UserFollow WHERE follower = ? AND followee = ?";
+        String sql = "SELECT 1 FROM UserFollow WHERE follower = ? AND followee = ?";
         try {
             return jdbcTemplate.queryForObject(sql, Long.class, followerMid, followeeMid) != null;
         } catch (EmptyResultDataAccessException e) {
@@ -463,8 +463,16 @@ public class DatabaseServiceImpl implements DatabaseService {
 
     @Override
     public String[] getPosted(long mid) {
+        String disableSeqScan = """
+                SET enable_seqscan = off;
+                """;
+        jdbcTemplate.execute(disableSeqScan);
         String sql = "SELECT bv FROM Video WHERE owner = ?";
         List<String> bvList = jdbcTemplate.queryForList(sql, String.class, mid);
+        String enableSeqScan = """
+                SET enable_seqscan = on;
+                """;
+        jdbcTemplate.execute(enableSeqScan);
         String[] bv = new String[bvList.size()];
         bvList.toArray(bv);
         return bv;
@@ -474,17 +482,27 @@ public class DatabaseServiceImpl implements DatabaseService {
     public float getValidVideoDuration(String bv) {
         if (bv == null || bv.isEmpty())
             return -1;
+        String disableSeqScan = """
+                SET enable_seqscan = off;
+                """;
+        jdbcTemplate.execute(disableSeqScan);
         String sql = "SELECT duration FROM Video WHERE bv = ? AND public_time < LOCALTIMESTAMP";
+        String enableSeqScan = """
+                SET enable_seqscan = on;
+                """;
         try {
-            return Optional.ofNullable(jdbcTemplate.queryForObject(sql, Float.class, bv)).orElse(-1f);
+            float res = Optional.ofNullable(jdbcTemplate.queryForObject(sql, Float.class, bv)).orElse(-1f);
+            jdbcTemplate.execute(enableSeqScan);
+            return res;
         } catch (EmptyResultDataAccessException e) {
+            jdbcTemplate.execute(enableSeqScan);
             return -1f;
         }
     }
 
     @Override
     public boolean isVideoUnwatched(long mid, String bv) {
-        String sql = "SELECT mid FROM ViewVideo WHERE mid = ? AND bv = ?";
+        String sql = "SELECT 1 FROM ViewVideo WHERE mid = ? AND bv = ?";
         try {
             return jdbcTemplate.queryForObject(sql, String.class, mid, bv) == null;
         } catch (EmptyResultDataAccessException e) {
@@ -530,7 +548,7 @@ public class DatabaseServiceImpl implements DatabaseService {
 
     @Override
     public boolean isDanmuLiked(long mid, long id) {
-        String sql = "SELECT mid FROM LikeDanmu WHERE mid = ? AND id = ?";
+        String sql = "SELECT 1 FROM LikeDanmu WHERE mid = ? AND id = ?";
         try {
             return jdbcTemplate.queryForObject(sql, Long.class, mid, id) != null;
         } catch (EmptyResultDataAccessException e) {
@@ -554,6 +572,13 @@ public class DatabaseServiceImpl implements DatabaseService {
 
     @Override
     public boolean isVideoNotEngage(AuthInfo auth, String bv) {
+        String disableSeqScan = """
+                SET enable_seqscan = off;
+                """;
+        jdbcTemplate.execute(disableSeqScan);
+        String enableSeqScan = """
+                SET enable_seqscan = on;
+                """;
         String sql = "SELECT owner FROM Video WHERE bv = ?";
         long ownerMid;
         try {
@@ -561,11 +586,15 @@ public class DatabaseServiceImpl implements DatabaseService {
         } catch (EmptyResultDataAccessException e) {
             ownerMid = -1;
         }
-        if (ownerMid < 0 || ownerMid == auth.getMid())
+        if (ownerMid < 0 || ownerMid == auth.getMid()) {
+            jdbcTemplate.execute(enableSeqScan);
             return true;
+        }
         UserRecord.Identity identity = getUserIdentity(auth.getMid());
-        if (identity == UserRecord.Identity.SUPERUSER)
+        if (identity == UserRecord.Identity.SUPERUSER) {
+            jdbcTemplate.execute(enableSeqScan);
             return false;
+        }
         sql = "SELECT reviewer FROM Video WHERE bv = ? AND public_time < LOCALTIMESTAMP";
         long reviewer;
         try {
@@ -573,6 +602,7 @@ public class DatabaseServiceImpl implements DatabaseService {
         } catch (EmptyResultDataAccessException e) {
             reviewer = -1;
         }
+        jdbcTemplate.execute(enableSeqScan);
         return reviewer <= 0;
     }
 
@@ -603,7 +633,7 @@ public class DatabaseServiceImpl implements DatabaseService {
 
     @Override
     public boolean isVideoLiked(long mid, String bv) {
-        String sql = "SELECT mid FROM LikeVideo WHERE mid = ? AND bv = ?";
+        String sql = "SELECT 1 FROM LikeVideo WHERE mid = ? AND bv = ?";
         try {
             return jdbcTemplate.queryForObject(sql, Long.class, mid, bv) != null;
         } catch (EmptyResultDataAccessException e) {
@@ -620,7 +650,7 @@ public class DatabaseServiceImpl implements DatabaseService {
 
     @Override
     public boolean isVideoCollected(long mid, String bv) {
-        String sql = "SELECT mid FROM FavVideo WHERE mid = ? AND bv = ?";
+        String sql = "SELECT 1 FROM FavVideo WHERE mid = ? AND bv = ?";
         try {
             return jdbcTemplate.queryForObject(sql, Long.class, mid, bv) != null;
         } catch (EmptyResultDataAccessException e) {
@@ -646,6 +676,10 @@ public class DatabaseServiceImpl implements DatabaseService {
     public long getVideoOwner(String bv) {
         if (bv == null || bv.isEmpty())
             return -1;
+        String disableSeqScan = """
+                SET enable_seqscan = off;
+                """;
+        jdbcTemplate.execute(disableSeqScan);
         String sql = "SELECT owner FROM Video WHERE bv = ?";
         long owner;
         try {
@@ -653,11 +687,20 @@ public class DatabaseServiceImpl implements DatabaseService {
         } catch (EmptyResultDataAccessException e) {
             owner = -1;
         }
+        String enableSeqScan = """
+                SET enable_seqscan = on;
+                """;
+        jdbcTemplate.execute(enableSeqScan);
         return owner;
     }
 
+    @SuppressWarnings("DuplicatedCode")
     @Override
     public boolean isVideoReviewed(String bv) {
+        String disableSeqScan = """
+                SET enable_seqscan = off;
+                """;
+        jdbcTemplate.execute(disableSeqScan);
         String sql = "SELECT reviewer FROM Video WHERE bv = ?";
         long reviewer;
         try {
@@ -665,6 +708,10 @@ public class DatabaseServiceImpl implements DatabaseService {
         } catch (EmptyResultDataAccessException e) {
             reviewer = -1;
         }
+        String enableSeqScan = """
+                SET enable_seqscan = on;
+                """;
+        jdbcTemplate.execute(enableSeqScan);
         return reviewer > 0;
     }
 
@@ -711,10 +758,20 @@ public class DatabaseServiceImpl implements DatabaseService {
     @Override
     public boolean isSameVideoExist(long mid, String title) {
         String escapeTitle = escape(title);
-        String sql = "SELECT bv FROM Video WHERE owner = ? AND title = ?";
+        String disableSeqScan = """
+                SET enable_seqscan = off;
+                """;
+        jdbcTemplate.execute(disableSeqScan);
+        String sql = "SELECT 1 FROM Video WHERE owner = ? AND title = ?";
+        String enableSeqScan = """
+                SET enable_seqscan = on;
+                """;
         try {
-            return jdbcTemplate.queryForObject(sql, String.class, mid, escapeTitle) != null;
+            String res = jdbcTemplate.queryForObject(sql, String.class, mid, escapeTitle);
+            jdbcTemplate.execute(enableSeqScan);
+            return res != null;
         } catch (EmptyResultDataAccessException e) {
+            jdbcTemplate.execute(enableSeqScan);
             return false;
         }
     }
@@ -770,6 +827,10 @@ public class DatabaseServiceImpl implements DatabaseService {
 
     @Override
     public boolean isNewInfoValid(String bv, PostVideoReq req) {
+        String disableSeqScan = """
+                SET enable_seqscan = off;
+                """;
+        jdbcTemplate.execute(disableSeqScan);
         String sql = "SELECT title, duration, description, public_time FROM Video WHERE bv = ?";
         PostVideoReq origin = jdbcTemplate.queryForObject(sql, (rs, rowNum) -> PostVideoReq.builder()
                 .title(rs.getString("title"))
@@ -777,6 +838,10 @@ public class DatabaseServiceImpl implements DatabaseService {
                 .description(rs.getString("description"))
                 .publicTime(rs.getTimestamp("public_time"))
                 .build(), bv);
+        String enableSeqScan = """
+                SET enable_seqscan = on;
+                """;
+        jdbcTemplate.execute(enableSeqScan);
         PostVideoReq escapeReq = PostVideoReq.builder()
                 .title(escape(req.getTitle()))
                 .duration(req.getDuration())
@@ -927,16 +992,16 @@ public class DatabaseServiceImpl implements DatabaseService {
 
     @Override
     public List<String> getTopVideos(String bv) {
-        String slowPath = """
-                SELECT bv, Count(bv) as bv_count
-                FROM ViewVideo
-                WHERE mid IN (SELECT mid FROM ViewVideo WHERE bv = ?)
-                GROUP BY bv
-                ORDER BY bv_count DESC, bv ASC
+        String JoinPath = """
+                SELECT v1.bv, Count(v1.bv) as bv_count
+                FROM ViewVideo v1
+                JOIN ViewVideo v2 ON v1.mid = v2.mid AND v2.bv = ?
+                GROUP BY v1.bv
+                ORDER BY bv_count DESC, v1.bv ASC
                 LIMIT 5
                 OFFSET 1
                 """;
-        return jdbcTemplate.query(slowPath, (rs, rowNum) -> rs.getString("bv"), bv);
+        return jdbcTemplate.query(JoinPath, (rs, rowNum) -> rs.getString("bv"), bv);
     }
 
     @Override
@@ -949,30 +1014,6 @@ public class DatabaseServiceImpl implements DatabaseService {
                 OFFSET ?
                 """;
         return jdbcTemplate.queryForList(sql, String.class, pageSize, pageSize * (pageNum - 1));
-    }
-
-    @Override
-    public boolean isInterestsExist(long mid) {
-        String sql = """
-                SELECT vv.bv
-                FROM (
-                    SELECT uf1.followee AS mid
-                    FROM UserFollow uf1
-                    JOIN UserFollow uf2
-                        ON uf1.follower = uf2.followee
-                        AND uf1.followee = uf2.follower
-                    WHERE uf1.follower = ?
-                ) AS friends
-                JOIN ViewVideo vv ON friends.mid = vv.mid
-                LEFT JOIN (
-                    SELECT bv
-                    FROM ViewVideo
-                    WHERE mid = ?
-                ) AS excluded_videos ON vv.bv = excluded_videos.bv
-                WHERE excluded_videos.bv IS NULL
-                LIMIT 1
-                """;
-        return !jdbcTemplate.query(sql, (rs, rowNum) -> rs.getString("bv"), mid, mid).isEmpty();
     }
 
     @Override
@@ -1004,9 +1045,8 @@ public class DatabaseServiceImpl implements DatabaseService {
                     up.level DESC,
                     v.public_time DESC
                 LIMIT ?
-                OFFSET ?
                 """;
-        return jdbcTemplate.query(sql, (rs, rowNum) -> rs.getString("bv"), mid, mid, pageSize, pageSize * (pageNum - 1));
+        return jdbcTemplate.query(sql, (rs, rowNum) -> rs.getString("bv"), mid, mid, pageSize * pageNum);
     }
 
     @Override
