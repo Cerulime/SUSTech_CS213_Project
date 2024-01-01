@@ -89,8 +89,9 @@ public class DanmuServiceImpl implements DanmuService {
         }
         boolean liked = databaseService.isDanmuLiked(auth.getMid(), id);
         if (liked)
-            return !databaseService.unlikeDanmu(auth.getMid(), id);
+            new Thread(() -> databaseService.unlikeDanmu(auth.getMid(), id)).start();
         else
-            return databaseService.likeDanmu(auth.getMid(), id);
+            new Thread(() -> databaseService.likeDanmu(auth.getMid(), id)).start();
+        return !liked;
     }
 }

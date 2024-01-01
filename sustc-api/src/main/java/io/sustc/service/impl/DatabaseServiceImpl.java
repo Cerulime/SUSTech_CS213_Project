@@ -388,14 +388,14 @@ public class DatabaseServiceImpl implements DatabaseService {
     }
 
     @Override
-    @Transactional(propagation = Propagation.MANDATORY)
+    @Transactional(propagation = Propagation.REQUIRED)
     public boolean follow(long followerMid, long followeeMid) {
         String sql = "INSERT INTO UserFollow(follower, followee) VALUES (?, ?)";
         return jdbcTemplate.update(sql, followerMid, followeeMid) > 0;
     }
 
     @Override
-    @Transactional(propagation = Propagation.MANDATORY)
+    @Transactional(propagation = Propagation.REQUIRED)
     public boolean unfollow(long followerMid, long followeeMid) {
         String sql = "DELETE FROM UserFollow WHERE follower = ? AND followee = ?";
         return jdbcTemplate.update(sql, followerMid, followeeMid) > 0;
@@ -585,14 +585,14 @@ public class DatabaseServiceImpl implements DatabaseService {
     }
 
     @Override
-    @Transactional(propagation = Propagation.MANDATORY)
+    @Transactional(propagation = Propagation.REQUIRED)
     public boolean unlikeDanmu(long mid, long id) {
         String sql = "DELETE FROM LikeDanmu WHERE mid = ? AND id = ?";
         return jdbcTemplate.update(sql, mid, id) > 0;
     }
 
     @Override
-    @Transactional(propagation = Propagation.MANDATORY)
+    @Transactional(propagation = Propagation.REQUIRED)
     public boolean likeDanmu(long mid, long id) {
         String sql = "INSERT INTO LikeDanmu(mid, id) VALUES (?, ?)";
         return jdbcTemplate.update(sql, mid, id) > 0;
@@ -646,14 +646,14 @@ public class DatabaseServiceImpl implements DatabaseService {
     }
 
     @Override
-    @Transactional(propagation = Propagation.MANDATORY)
+    @Transactional(propagation = Propagation.REQUIRED)
     public void updateCoin(long mid, int newCoin) {
         String sql = "UPDATE UserProfile SET coin = ? WHERE mid = ?";
         jdbcTemplate.update(sql, newCoin, mid);
     }
 
     @Override
-    @Transactional(propagation = Propagation.MANDATORY)
+    @Transactional(propagation = Propagation.REQUIRED)
     public boolean likeVideo(long mid, String bv) {
         String sql = "INSERT INTO LikeVideo(mid, bv) VALUES (?, ?)";
         return jdbcTemplate.update(sql, mid, bv) > 0;
@@ -670,7 +670,7 @@ public class DatabaseServiceImpl implements DatabaseService {
     }
 
     @Override
-    @Transactional(propagation = Propagation.MANDATORY)
+    @Transactional(propagation = Propagation.REQUIRED)
     public boolean unlikeVideo(long mid, String bv) {
         String sql = "DELETE FROM LikeVideo WHERE mid = ? AND bv = ?";
         return jdbcTemplate.update(sql, mid, bv) > 0;
@@ -687,14 +687,14 @@ public class DatabaseServiceImpl implements DatabaseService {
     }
 
     @Override
-    @Transactional(propagation = Propagation.MANDATORY)
+    @Transactional(propagation = Propagation.REQUIRED)
     public boolean uncollectVideo(long mid, String bv) {
         String sql = "DELETE FROM FavVideo WHERE mid = ? AND bv = ?";
         return jdbcTemplate.update(sql, mid, bv) > 0;
     }
 
     @Override
-    @Transactional(propagation = Propagation.MANDATORY)
+    @Transactional(propagation = Propagation.REQUIRED)
     public boolean collectVideo(long mid, String bv) {
         String sql = "INSERT INTO FavVideo(mid, bv) VALUES (?, ?)";
         return jdbcTemplate.update(sql, mid, bv) > 0;
@@ -744,7 +744,7 @@ public class DatabaseServiceImpl implements DatabaseService {
     }
 
     @Override
-    @Transactional(propagation = Propagation.MANDATORY)
+    @Transactional(propagation = Propagation.REQUIRED)
     public boolean reviewVideo(long mid, String bv) {
         String sql = "UPDATE Video SET reviewer = ?, review_time = LOCALTIMESTAMP WHERE bv = ?";
         return jdbcTemplate.update(sql, mid, bv) > 0;
@@ -884,7 +884,7 @@ public class DatabaseServiceImpl implements DatabaseService {
     }
 
     @Override
-    @Transactional(propagation = Propagation.MANDATORY)
+    @Transactional(propagation = Propagation.REQUIRED)
     public boolean updateVideoInfo(String bv, PostVideoReq req) {
         String sql = "UPDATE Video SET title = ?, duration = ?, description = ?, public_time = ?, reviewer = NULL, review_time = NULL WHERE bv = ?";
         return jdbcTemplate.update(sql, escape(req.getTitle()), req.getDuration(), escape(req.getDescription()), req.getPublicTime(), bv) > 0;

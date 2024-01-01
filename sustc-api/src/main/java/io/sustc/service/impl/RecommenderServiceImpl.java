@@ -59,10 +59,6 @@ public class RecommenderServiceImpl implements RecommenderService {
                 return null;
             return result.subList(start, end);
         }
-//        if (databaseService.isInterestsExist(auth.getMid()))
-//            return databaseService.getRecVideosForUser(auth.getMid(), pageSize, pageNum);
-//        else
-//            return databaseService.getRecVideos(pageSize, pageNum);
     }
 
     @Override

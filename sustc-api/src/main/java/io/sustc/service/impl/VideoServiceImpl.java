@@ -81,11 +81,7 @@ public class VideoServiceImpl implements VideoService {
             return false;
         }
         boolean isReviewed = databaseService.isVideoReviewed(bv);
-        boolean res = databaseService.updateVideoInfo(bv, req);
-        if (!res) {
-            log.error("Failed to update video info: {}", req);
-            throw new RuntimeException("Failed to update video info");
-        }
+        new Thread(() -> databaseService.updateVideoInfo(bv, req)).start();
         return isReviewed;
     }
 
@@ -150,7 +146,8 @@ public class VideoServiceImpl implements VideoService {
             log.warn("Video {} has been reviewed", bv);
             return false;
         }
-        return databaseService.reviewVideo(auth.getMid(), bv);
+        new Thread(() -> databaseService.reviewVideo(auth.getMid(), bv)).start();
+        return true;
     }
 
     @Override
@@ -169,7 +166,7 @@ public class VideoServiceImpl implements VideoService {
         }
         boolean isCoin = databaseService.coinVideo(auth.getMid(), bv);
         if (isCoin)
-            databaseService.updateCoin(auth.getMid(), coin - 1);
+            new Thread(() -> databaseService.updateCoin(auth.getMid(), coin - 1)).start();
         return isCoin;
     }
 
@@ -184,9 +181,10 @@ public class VideoServiceImpl implements VideoService {
         }
         boolean isLike = databaseService.isVideoLiked(auth.getMid(), bv);
         if (isLike)
-            return !databaseService.unlikeVideo(auth.getMid(), bv);
+            new Thread(() -> databaseService.unlikeVideo(auth.getMid(), bv)).start();
         else
-            return databaseService.likeVideo(auth.getMid(), bv);
+            new Thread(() -> databaseService.likeVideo(auth.getMid(), bv)).start();
+        return !isLike;
     }
 
     @Override
@@ -200,8 +198,9 @@ public class VideoServiceImpl implements VideoService {
         }
         boolean isCollect = databaseService.isVideoCollected(auth.getMid(), bv);
         if (isCollect)
-            return !databaseService.uncollectVideo(auth.getMid(), bv);
+            new Thread(() -> databaseService.uncollectVideo(auth.getMid(), bv)).start();
         else
-            return databaseService.collectVideo(auth.getMid(), bv);
+            new Thread(() -> databaseService.collectVideo(auth.getMid(), bv)).start();
+        return !isCollect;
     }
 }
