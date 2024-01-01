@@ -745,8 +745,27 @@ public class DatabaseServiceImpl implements DatabaseService {
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public boolean deleteVideo(String bv) {
+        String disableTrigger = """
+                ALTER TABLE Danmu DISABLE TRIGGER delete_danmu_count;
+                ALTER TABLE CountVideo DISABLE TRIGGER update_score;
+                ALTER TABLE ViewVideo DISABLE TRIGGER delete_view_count;
+                ALTER TABLE LikeVideo DISABLE TRIGGER delete_like_count;
+                ALTER TABLE FavVideo DISABLE TRIGGER delete_fav_count;
+                ALTER TABLE CoinVideo DISABLE TRIGGER delete_coin_count;
+                """;
+        jdbcTemplate.execute(disableTrigger);
         String sql = "DELETE FROM Video WHERE bv = ?";
-        return jdbcTemplate.update(sql, bv) > 0;
+        int res = jdbcTemplate.update(sql, bv);
+        String enableTrigger = """
+                ALTER TABLE Danmu ENABLE TRIGGER delete_danmu_count;
+                ALTER TABLE CountVideo ENABLE TRIGGER update_score;
+                ALTER TABLE ViewVideo ENABLE TRIGGER delete_view_count;
+                ALTER TABLE LikeVideo ENABLE TRIGGER delete_like_count;
+                ALTER TABLE FavVideo ENABLE TRIGGER delete_fav_count;
+                ALTER TABLE CoinVideo ENABLE TRIGGER delete_coin_count;
+                """;
+        jdbcTemplate.execute(enableTrigger);
+        return res > 0;
     }
 
     @Override
@@ -911,7 +930,7 @@ public class DatabaseServiceImpl implements DatabaseService {
         String slowPath = """
                 SELECT bv, Count(bv) as bv_count
                 FROM ViewVideo
-                WHERE mid = ANY(ARRAY(SELECT mid FROM ViewVideo WHERE bv = ?))
+                WHERE mid IN (SELECT mid FROM ViewVideo WHERE bv = ?)
                 GROUP BY bv
                 ORDER BY bv_count DESC, bv ASC
                 LIMIT 5
