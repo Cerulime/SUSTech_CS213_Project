@@ -62,7 +62,7 @@ public interface DatabaseService {
 
     int MAX_CONTENT_LENGTH = 300;
     int NORMAL_BATCH_SIZE = 1000;
-    int BIG_BATCH_SIZE = 10000;
+    int BIG_BATCH_SIZE = 35000;
 
     float EPSILON = 1e-6f;
 

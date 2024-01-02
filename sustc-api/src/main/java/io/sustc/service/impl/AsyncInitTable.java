@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.io.Reader;
 import java.io.StringReader;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -206,22 +207,28 @@ public class AsyncInitTable {
         jdbcTemplate.execute(createUserFollowTable);
         String copySql = "COPY UserFollow(follower, followee) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t')";
         StringBuilder copyData = new StringBuilder();
+        List<CompletableFuture<Void>> tasks = new ArrayList<>();
         int count = 0;
         for (UserRecord user : userRecords) {
             for (long followee : user.getFollowing()) {
                 copyData.append(user.getMid()).append('\t')
                         .append(followee).append('\n');
                 count++;
-                if (count >= BIG_BATCH_SIZE) {
-                    copyInsertion(copyData.toString(), copySql);
+                if (count >= BIG_BATCH_SIZE * 5) {
+                    String copyDataSnapshot = copyData.toString();
+                    tasks.add(CompletableFuture.runAsync(() -> copyInsertion(copyDataSnapshot, copySql)));
+//                    copyInsertion(copyData.toString(), copySql);
                     copyData.setLength(0);
                     count = 0;
                 }
             }
         }
         if (count > 0) {
-            copyInsertion(copyData.toString(), copySql);
+            tasks.add(CompletableFuture.runAsync(() -> copyInsertion(copyData.toString(), copySql)));
+//            copyInsertion(copyData.toString(), copySql);
         }
+        log.info(tasks.size() + " tasks in UserFollow table");
+        CompletableFuture.allOf(tasks.toArray(new CompletableFuture[0])).join();
         String createUserFollowTableConstraint = """
                 ALTER TABLE UserFollow ADD PRIMARY KEY (follower, followee);
                 ALTER TABLE UserFollow ADD FOREIGN KEY (follower) REFERENCES UserAuth(mid) ON DELETE CASCADE;
@@ -326,6 +333,7 @@ public class AsyncInitTable {
         jdbcTemplate.execute(createVideoTable);
         String copySql = "COPY Video(bv, title, owner, commit_time, review_time, public_time, duration, description, reviewer) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t', NULL '', QUOTE E'\\x07')";
         StringBuilder copyData = new StringBuilder();
+        List<CompletableFuture<Void>> tasks = new ArrayList<>();
         int count = 0;
         for (VideoRecord video : videoRecords) {
             transformer.setAvCount(Math.max(transformer.getAvCount(), transformer.getAv(video.getBv())));
@@ -354,14 +362,19 @@ public class AsyncInitTable {
                     .append(video.getReviewer()).append('\n');
             count++;
             if (count >= NORMAL_BATCH_SIZE) {
-                copyInsertion(copyData.toString(), copySql);
+                String copyDataSnapshot = copyData.toString();
+                tasks.add(CompletableFuture.runAsync(() -> copyInsertion(copyDataSnapshot, copySql)));
+//                copyInsertion(copyData.toString(), copySql);
                 copyData.setLength(0);
                 count = 0;
             }
         }
         if (count > 0) {
-            copyInsertion(copyData.toString(), copySql);
+            tasks.add(CompletableFuture.runAsync(() -> copyInsertion(copyData.toString(), copySql)));
+//            copyInsertion(copyData.toString(), copySql);
         }
+        log.info(tasks.size() + " tasks in Video table");
+        CompletableFuture.allOf(tasks.toArray(new CompletableFuture[0])).join();
         String createVideoTableConstraint = """
                 ALTER TABLE Video ALTER COLUMN title SET NOT NULL;
                 ALTER TABLE Video ALTER COLUMN owner SET NOT NULL;
@@ -402,6 +415,7 @@ public class AsyncInitTable {
         jdbcTemplate.execute(createCountVideoTable);
         String copySql = "COPY CountVideo(bv, like_count, coin_count, fav_count, view_count, view_rate, danmu_count, score) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t')";
         StringBuilder copyData = new StringBuilder();
+        List<CompletableFuture<Void>> tasks = new ArrayList<>();
         int count = 0;
         Map<String, Long> danmuCounts = danmuRecords.stream()
                 .collect(Collectors.groupingBy(DanmuRecord::getBv, Collectors.counting()));
@@ -435,14 +449,19 @@ public class AsyncInitTable {
                     .append(score).append('\n');
             count++;
             if (count >= NORMAL_BATCH_SIZE) {
-                copyInsertion(copyData.toString(), copySql);
+                String copyDataSnapshot = copyData.toString();
+                tasks.add(CompletableFuture.runAsync(() -> copyInsertion(copyDataSnapshot, copySql)));
+//                copyInsertion(copyData.toString(), copySql);
                 copyData.setLength(0);
                 count = 0;
             }
         }
         if (count > 0) {
-            copyInsertion(copyData.toString(), copySql);
+            tasks.add(CompletableFuture.runAsync(() -> copyInsertion(copyData.toString(), copySql)));
+//            copyInsertion(copyData.toString(), copySql);
         }
+        log.info(tasks.size() + " tasks in CountVideo table");
+        CompletableFuture.allOf(tasks.toArray(new CompletableFuture[0])).join();
         String createCountVideoTableConstraint = """
                 ALTER TABLE CountVideo ALTER COLUMN like_count SET NOT NULL;
                 ALTER TABLE CountVideo ALTER COLUMN coin_count SET NOT NULL;
@@ -505,6 +524,7 @@ public class AsyncInitTable {
         jdbcTemplate.execute(createLikeVideoTable);
         String copySql = "COPY LikeVideo(mid, bv) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t')";
         StringBuilder copyData = new StringBuilder();
+        List<CompletableFuture<Void>> tasks = new ArrayList<>();
         int count = 0;
         for (VideoRecord video : VideoRecords) {
             String bv = video.getBv();
@@ -513,15 +533,20 @@ public class AsyncInitTable {
                         .append(bv).append('\n');
                 count++;
                 if (count >= BIG_BATCH_SIZE) {
-                    copyInsertion(copyData.toString(), copySql);
+                    String copyDataSnapshot = copyData.toString();
+                    tasks.add(CompletableFuture.runAsync(() -> copyInsertion(copyDataSnapshot, copySql)));
+//                    copyInsertion(copyData.toString(), copySql);
                     copyData.setLength(0);
                     count = 0;
                 }
             }
         }
         if (count > 0) {
-            copyInsertion(copyData.toString(), copySql);
+            tasks.add(CompletableFuture.runAsync(() -> copyInsertion(copyData.toString(), copySql)));
+//            copyInsertion(copyData.toString(), copySql);
         }
+        log.info(tasks.size() + " tasks in LikeVideo table");
+        CompletableFuture.allOf(tasks.toArray(new CompletableFuture[0])).join();
         setVideoConstraint("Like");
         setTriggers("like", "LikeVideo");
         log.info("Finish initializing LikeVideo table");
@@ -548,6 +573,7 @@ public class AsyncInitTable {
         jdbcTemplate.execute(createCoinVideoTable);
         String copySql = "COPY CoinVideo(mid, bv) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t')";
         StringBuilder copyData = new StringBuilder();
+        List<CompletableFuture<Void>> tasks = new ArrayList<>();
         int count = 0;
         for (VideoRecord video : VideoRecords) {
             String bv = video.getBv();
@@ -556,15 +582,20 @@ public class AsyncInitTable {
                         .append(bv).append('\n');
                 count++;
                 if (count >= BIG_BATCH_SIZE) {
-                    copyInsertion(copyData.toString(), copySql);
+                    String copyDataSnapshot = copyData.toString();
+                    tasks.add(CompletableFuture.runAsync(() -> copyInsertion(copyDataSnapshot, copySql)));
+//                    copyInsertion(copyData.toString(), copySql);
                     copyData.setLength(0);
                     count = 0;
                 }
             }
         }
         if (count > 0) {
-            copyInsertion(copyData.toString(), copySql);
+            tasks.add(CompletableFuture.runAsync(() -> copyInsertion(copyData.toString(), copySql)));
+//            copyInsertion(copyData.toString(), copySql);
         }
+        log.info(tasks.size() + " tasks in CoinVideo table");
+        CompletableFuture.allOf(tasks.toArray(new CompletableFuture[0])).join();
         setVideoConstraint("Coin");
         setTriggers("coin", "CoinVideo");
         log.info("Finish initializing CoinVideo table");
@@ -591,6 +622,7 @@ public class AsyncInitTable {
         jdbcTemplate.execute(createFavVideoTable);
         String copySql = "COPY FavVideo(mid, bv) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t')";
         StringBuilder copyData = new StringBuilder();
+        List<CompletableFuture<Void>> tasks = new ArrayList<>();
         int count = 0;
         for (VideoRecord video : videoRecords) {
             String bv = video.getBv();
@@ -599,15 +631,20 @@ public class AsyncInitTable {
                         .append(bv).append('\n');
                 count++;
                 if (count >= BIG_BATCH_SIZE) {
-                    copyInsertion(copyData.toString(), copySql);
+                    String copyDataSnapshot = copyData.toString();
+                    tasks.add(CompletableFuture.runAsync(() -> copyInsertion(copyDataSnapshot, copySql)));
+//                    copyInsertion(copyData.toString(), copySql);
                     copyData.setLength(0);
                     count = 0;
                 }
             }
         }
         if (count > 0) {
-            copyInsertion(copyData.toString(), copySql);
+            tasks.add(CompletableFuture.runAsync(() -> copyInsertion(copyData.toString(), copySql)));
+//            copyInsertion(copyData.toString(), copySql);
         }
+        log.info(tasks.size() + " tasks in FavVideo table");
+        CompletableFuture.allOf(tasks.toArray(new CompletableFuture[0])).join();
         setVideoConstraint("Fav");
         setTriggers("fav", "FavVideo");
         log.info("Finish initializing FavVideo table");
@@ -626,18 +663,15 @@ public class AsyncInitTable {
                     bv CHAR(%d),
                     view_time REAL
                 ) PARTITION BY HASH (mid);
-                CREATE TABLE ViewVideo_1 PARTITION OF ViewVideo FOR VALUES WITH (MODULUS 8, REMAINDER 0);
-                CREATE TABLE ViewVideo_2 PARTITION OF ViewVideo FOR VALUES WITH (MODULUS 8, REMAINDER 1);
-                CREATE TABLE ViewVideo_3 PARTITION OF ViewVideo FOR VALUES WITH (MODULUS 8, REMAINDER 2);
-                CREATE TABLE ViewVideo_4 PARTITION OF ViewVideo FOR VALUES WITH (MODULUS 8, REMAINDER 3);
-                CREATE TABLE ViewVideo_5 PARTITION OF ViewVideo FOR VALUES WITH (MODULUS 8, REMAINDER 4);
-                CREATE TABLE ViewVideo_6 PARTITION OF ViewVideo FOR VALUES WITH (MODULUS 8, REMAINDER 5);
-                CREATE TABLE ViewVideo_7 PARTITION OF ViewVideo FOR VALUES WITH (MODULUS 8, REMAINDER 6);
-                CREATE TABLE ViewVideo_8 PARTITION OF ViewVideo FOR VALUES WITH (MODULUS 8, REMAINDER 7);
+                CREATE TABLE ViewVideo_1 PARTITION OF ViewVideo FOR VALUES WITH (MODULUS 4, REMAINDER 0);
+                CREATE TABLE ViewVideo_2 PARTITION OF ViewVideo FOR VALUES WITH (MODULUS 4, REMAINDER 1);
+                CREATE TABLE ViewVideo_3 PARTITION OF ViewVideo FOR VALUES WITH (MODULUS 4, REMAINDER 2);
+                CREATE TABLE ViewVideo_4 PARTITION OF ViewVideo FOR VALUES WITH (MODULUS 4, REMAINDER 3);
                 """, MAX_BV_LENGTH);
         jdbcTemplate.execute(createViewVideoTable);
         String copySql = "COPY ViewVideo(mid, bv, view_time) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t')";
         StringBuilder copyData = new StringBuilder();
+        List<CompletableFuture<Void>> tasks = new ArrayList<>();
         int count = 0;
         for (VideoRecord video : videoRecords) {
             long[] viewerMids = video.getViewerMids();
@@ -650,15 +684,20 @@ public class AsyncInitTable {
                         .append(viewTimes[i]).append('\n');
                 count++;
                 if (count >= BIG_BATCH_SIZE) {
-                    copyInsertion(copyData.toString(), copySql);
+                    String copyDataSnapshot = copyData.toString();
+                    tasks.add(CompletableFuture.runAsync(() -> copyInsertion(copyDataSnapshot, copySql)));
+//                    copyInsertion(copyData.toString(), copySql);
                     copyData.setLength(0);
                     count = 0;
                 }
             }
         }
         if (count > 0) {
-            copyInsertion(copyData.toString(), copySql);
+            tasks.add(CompletableFuture.runAsync(() -> copyInsertion(copyData.toString(), copySql)));
+//            copyInsertion(copyData.toString(), copySql);
         }
+        log.info(tasks.size() + " tasks in ViewVideo table");
+        CompletableFuture.allOf(tasks.toArray(new CompletableFuture[0])).join();
         String createViewVideoTableConstraint = """
                 ALTER TABLE ViewVideo ALTER COLUMN view_time SET NOT NULL;
                                 
@@ -732,6 +771,7 @@ public class AsyncInitTable {
         jdbcTemplate.execute(createDanmuTable);
         String copySql = "COPY Danmu(id, bv, mid, dis_time, content, post_time) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t', QUOTE E'\\x07')";
         StringBuilder copyData = new StringBuilder();
+        List<CompletableFuture<Void>> tasks = new ArrayList<>();
         int count = 0, danmuId = 0;
         for (DanmuRecord danmu : danmuRecords) {
             danmuId++;
@@ -749,14 +789,19 @@ public class AsyncInitTable {
                     .append(danmu.getPostTime()).append('\n');
             count++;
             if (count >= NORMAL_BATCH_SIZE) {
-                copyInsertion(copyData.toString(), copySql);
+                String copyDataSnapshot = copyData.toString();
+                tasks.add(CompletableFuture.runAsync(() -> copyInsertion(copyDataSnapshot, copySql)));
+//                copyInsertion(copyData.toString(), copySql);
                 copyData.setLength(0);
                 count = 0;
             }
         }
         if (count > 0) {
-            copyInsertion(copyData.toString(), copySql);
+            tasks.add(CompletableFuture.runAsync(() -> copyInsertion(copyData.toString(), copySql)));
+//            copyInsertion(copyData.toString(), copySql);
         }
+        log.info(tasks.size() + " tasks in Danmu table");
+        CompletableFuture.allOf(tasks.toArray(new CompletableFuture[0])).join();
         String createDanmuTableConstraint = """
                 SELECT setval(pg_get_serial_sequence('Danmu', 'id'), (SELECT MAX(id) FROM Danmu));
                                 
@@ -799,6 +844,7 @@ public class AsyncInitTable {
         jdbcTemplate.execute(createLikeDanmuTable);
         String copySql = "COPY LikeDanmu(mid, id) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t')";
         StringBuilder copyData = new StringBuilder();
+        List<CompletableFuture<Void>> tasks = new ArrayList<>();
         int count = 0, danmuID = 0;
         for (DanmuRecord danmu : danmuRecords) {
             danmuID++;
@@ -807,15 +853,20 @@ public class AsyncInitTable {
                         .append(danmuID).append('\n');
                 count++;
                 if (count >= BIG_BATCH_SIZE) {
-                    copyInsertion(copyData.toString(), copySql);
+                    String copyDataSnapshot = copyData.toString();
+                    tasks.add(CompletableFuture.runAsync(() -> copyInsertion(copyDataSnapshot, copySql)));
+//                    copyInsertion(copyData.toString(), copySql);
                     copyData.setLength(0);
                     count = 0;
                 }
             }
         }
         if (count > 0) {
-            copyInsertion(copyData.toString(), copySql);
+            tasks.add(CompletableFuture.runAsync(() -> copyInsertion(copyData.toString(), copySql)));
+//            copyInsertion(copyData.toString(), copySql);
         }
+        log.info(tasks.size() + " tasks in LikeDanmu table");
+        CompletableFuture.allOf(tasks.toArray(new CompletableFuture[0])).join();
         String createLikeDanmuTableConstraint = """
                 ALTER TABLE LikeDanmu ADD PRIMARY KEY (mid, id);
                 ALTER TABLE LikeDanmu ADD FOREIGN KEY (mid) REFERENCES UserAuth(mid) ON DELETE CASCADE;

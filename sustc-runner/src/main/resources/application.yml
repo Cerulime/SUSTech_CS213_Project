@@ -5,7 +5,6 @@ spring:
     password: sustc  # change this to your own password
     hikari:
       connection-timeout: 30000
-      maximum-pool-size: 10
       leak-detection-threshold: 120000
 
 logging:

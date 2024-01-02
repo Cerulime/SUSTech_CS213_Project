@@ -162,19 +162,16 @@ public class UserServiceImpl implements UserService {
         CompletableFuture<long[]> followingFuture = databaseService.getFollowingAsync(mid);
         CompletableFuture<long[]> followerFuture = databaseService.getFollowerAsync(mid);
         CompletableFuture<String[]> watchedFuture = databaseService.getWatchedAsync(mid);
-        CompletableFuture<String[]> likedFuture = databaseService.getLikedAsync(mid);
-        CompletableFuture<String[]> collectedFuture = databaseService.getCollectedAsync(mid);
-        CompletableFuture<String[]> postedFuture = databaseService.getPostedAsync(mid);
-        CompletableFuture.allOf(followingFuture, followerFuture, watchedFuture, likedFuture, collectedFuture, postedFuture).join();
+        CompletableFuture.allOf(followingFuture, followerFuture, watchedFuture).join();
         return UserInfoResp.builder()
                 .mid(mid)
                 .coin(databaseService.getCoin(mid))
                 .following(followingFuture.join())
                 .follower(followerFuture.join())
                 .watched(watchedFuture.join())
-                .liked(likedFuture.join())
-                .collected(collectedFuture.join())
-                .posted(postedFuture.join())
+                .liked(databaseService.getLiked(mid))
+                .collected(databaseService.getCollected(mid))
+                .posted(databaseService.getPosted(mid))
                 .build();
     }
 }

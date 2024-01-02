@@ -968,7 +968,7 @@ public class DatabaseServiceImpl implements DatabaseService {
                 UPDATE TempVideo
                 SET relevance = relevance + (length(text) - length(replace(text, ?, ''))) / length(?);
                 """;
-        jdbcTemplate.update(updateRelevanceTemp, s, s, s);
+        jdbcTemplate.update(updateRelevanceTemp, s, s);
     }
 
     @Override
