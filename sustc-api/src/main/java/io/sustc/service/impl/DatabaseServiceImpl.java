@@ -100,11 +100,20 @@ public class DatabaseServiceImpl implements DatabaseService {
         setConfig();
 
         CompletableFuture<Void> UserAuth = asyncInitTable.initUserAuthTableAsync(userRecords);
-        CompletableFuture<Void> UserFollow = asyncInitTable.initUserFollowTableAsync(userRecords);
-        CompletableFuture<Void> UserProfile = asyncInitTable.initUserProfileTableAsync(userRecords);
-        CompletableFuture<Void> UserFriends = asyncInitTable.initUserFriendsTableAsync(userRecords);
         CompletableFuture<Void> Video = UserAuth.thenComposeAsync(aVoid ->
                 asyncInitTable.initVideoTableAsync(videoRecords)
+        );
+        CompletableFuture<Void> ViewVideo = CompletableFuture.allOf(UserAuth, Video).thenComposeAsync(aVoid ->
+                asyncInitTable.initViewVideoTableAsync(videoRecords)
+        );
+//        CompletableFuture<Void> ViewVideoConstraint = CompletableFuture.allOf(ViewVideo, Video).thenRunAsync(
+//                asyncInitTable::createViewVideoConstraintAsync
+//        );
+        CompletableFuture<Void> UserProfile = asyncInitTable.initUserProfileTableAsync(userRecords);
+        CompletableFuture<Void> UserFriends = asyncInitTable.initUserFriendsTableAsync(userRecords);
+        CompletableFuture<Void> UserFollow = asyncInitTable.initUserFollowTableAsync(userRecords);
+        CompletableFuture<Void> UserFollowConstraint = CompletableFuture.allOf(UserFollow, UserAuth).thenRunAsync(
+                asyncInitTable::createUserFollowConstraintAsync
         );
         CompletableFuture<Void> Danmu = asyncInitTable.initDanmuTableAsync(danmuRecords);
         CompletableFuture<Void> DanmuConstraint = CompletableFuture.allOf(Danmu, Video).thenRunAsync(
@@ -114,15 +123,8 @@ public class DatabaseServiceImpl implements DatabaseService {
         CompletableFuture<Void> LikeDanmuConstraint = CompletableFuture.allOf(LikeDanmu, Danmu).thenRunAsync(
                 asyncInitTable::createLikeDanmuConstraintAsync
         );
-        CompletableFuture<Void> ViewVideo = asyncInitTable.initViewVideoTableAsync(videoRecords);
-        CompletableFuture<Void> LikeVideo = asyncInitTable.initLikeVideoTableAsync(videoRecords);
-        CompletableFuture<Void> FavVideo = asyncInitTable.initFavVideoTableAsync(videoRecords);
-        CompletableFuture<Void> CoinVideo = asyncInitTable.initCoinVideoTableAsync(videoRecords);
         CompletableFuture<Void> CountVideo = Video.thenComposeAsync(aVoid ->
                 asyncInitTable.initCountVideoTableAsync(videoRecords, danmuRecords)
-        );
-        CompletableFuture<Void> UserFollowConstraint = CompletableFuture.allOf(UserFollow, UserAuth).thenRunAsync(
-                asyncInitTable::createUserFollowConstraintAsync
         );
         CompletableFuture<Void> UserProfileConstraint = CompletableFuture.allOf(UserProfile, UserAuth).thenRunAsync(
                 asyncInitTable::createUserProfileConstraintAsync
@@ -130,27 +132,13 @@ public class DatabaseServiceImpl implements DatabaseService {
         CompletableFuture<Void> UserFriendsConstraint = CompletableFuture.allOf(UserFriends, UserAuth).thenRunAsync(
                 asyncInitTable::createUserFriendsConstraintAsync
         );
-        CompletableFuture<Void> ViewVideoConstraint = CompletableFuture.allOf(ViewVideo, Video).thenRunAsync(
-                asyncInitTable::createViewVideoConstraintAsync
-        );
-        CompletableFuture<Void> LikeVideoConstraint = CompletableFuture.allOf(LikeVideo, Video).thenRunAsync(
-                asyncInitTable::createLikeVideoConstraintAsync
-        );
-        CompletableFuture<Void> FavVideoConstraint = CompletableFuture.allOf(FavVideo, Video).thenRunAsync(
-                asyncInitTable::createFavVideoConstraintAsync
-        );
-        CompletableFuture<Void> CoinVideoConstraint = CompletableFuture.allOf(CoinVideo, Video).thenRunAsync(
-                asyncInitTable::createCoinVideoConstraintAsync
-        );
         CompletableFuture.allOf(
+//                ViewVideoConstraint,
+                ViewVideo,
                 CountVideo,
                 UserFollowConstraint,
                 UserProfileConstraint,
                 UserFriendsConstraint,
-                ViewVideoConstraint,
-                LikeVideoConstraint,
-                FavVideoConstraint,
-                CoinVideoConstraint,
                 DanmuConstraint,
                 LikeDanmuConstraint
         ).join();
@@ -171,7 +159,19 @@ public class DatabaseServiceImpl implements DatabaseService {
 
         log.info("End importing at " + new Timestamp(new Date().getTime()));
 
+        CompletableFuture<Void> LikeVideo = asyncInitTable.initLikeVideoTableAsync(videoRecords);
+        CompletableFuture<Void> FavVideo = asyncInitTable.initFavVideoTableAsync(videoRecords);
+        CompletableFuture<Void> CoinVideo = asyncInitTable.initCoinVideoTableAsync(videoRecords);
         transformer.setAvCount(asyncInitTable.getAvCount());
+        CompletableFuture<Void> LikeVideoConstraint = CompletableFuture.allOf(LikeVideo, Video).thenRunAsync(
+                asyncInitTable::createLikeVideoConstraintAsync
+        );
+        CompletableFuture<Void> FavVideoConstraint = CompletableFuture.allOf(FavVideo, Video).thenRunAsync(
+                asyncInitTable::createFavVideoConstraintAsync
+        );
+        CompletableFuture<Void> CoinVideoConstraint = CompletableFuture.allOf(CoinVideo, Video).thenRunAsync(
+                asyncInitTable::createCoinVideoConstraintAsync
+        );
     }
 
     private void createGetHotspotFunction() {

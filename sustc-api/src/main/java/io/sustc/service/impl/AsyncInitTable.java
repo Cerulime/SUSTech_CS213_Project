@@ -129,6 +129,7 @@ public class AsyncInitTable {
                 CREATE INDEX UserProfileLevelIndex ON UserProfile(level DESC);
                 """;
         jdbcTemplate.execute(createUserProfileTableConstraint);
+        log.info("Finish Constraint UserProfile table");
     }
 
     @Async("taskExecutor")
@@ -203,6 +204,15 @@ public class AsyncInitTable {
     }
 
     public void createUserFollowConstraint() {
+        String config = """
+                SET work_mem = '256MB';
+                SET maintenance_work_mem = '1.5GB';
+                SET effective_cache_size = '4GB';
+                SET temp_buffers = '256MB';
+                SET default_statistics_target = 500;
+                SET max_parallel_workers_per_gather = 8;
+                """;
+        jdbcTemplate.execute(config);
         String createUserFollowTableConstraint = """
                 ALTER TABLE UserFollow ADD PRIMARY KEY (follower, followee);
                 ALTER TABLE UserFollow ADD FOREIGN KEY (follower) REFERENCES UserAuth(mid) ON DELETE CASCADE;
@@ -211,6 +221,7 @@ public class AsyncInitTable {
                 CREATE INDEX UserFolloweeIndex ON UserFollow(followee);
                 """;
         jdbcTemplate.execute(createUserFollowTableConstraint);
+        log.info("Finish Constraint UserFollow table");
     }
 
     @Async("taskExecutor")
@@ -300,6 +311,7 @@ public class AsyncInitTable {
                 ALTER TABLE UserFriends ADD FOREIGN KEY (friend) REFERENCES UserAuth(mid) ON DELETE CASCADE;
                 """;
         jdbcTemplate.execute(createUserFriendsTableConstraint);
+        log.info("Finish Constraint UserFriends table");
     }
 
     @Async("taskExecutor")
@@ -709,6 +721,7 @@ public class AsyncInitTable {
                 CREATE INDEX ViewVideoBvIndex ON ViewVideo(bv);
                 """;
         jdbcTemplate.execute(createViewVideoTableConstraint);
+        log.info("Finish Constraint ViewVideo table");
     }
 
     @Async("taskExecutor")
@@ -718,6 +731,15 @@ public class AsyncInitTable {
     }
 
     public void initViewVideoTable(List<VideoRecord> videoRecords) {
+        String config = """
+                SET work_mem = '256MB';
+                SET maintenance_work_mem = '1.5GB';
+                SET effective_cache_size = '4GB';
+                SET temp_buffers = '256MB';
+                SET default_statistics_target = 500;
+                SET max_parallel_workers_per_gather = 8;
+                """;
+        jdbcTemplate.execute(config);
         String createViewVideoTable = String.format("""
                 CREATE TABLE IF NOT EXISTS ViewVideo(
                     mid BIGINT,
@@ -759,6 +781,7 @@ public class AsyncInitTable {
         }
         log.info(tasks.size() + " tasks in ViewVideo table");
         CompletableFuture.allOf(tasks.toArray(new CompletableFuture[0])).join();
+        createViewVideoConstraint();
         String setTriggers = """
                 CREATE OR REPLACE FUNCTION increase_view_count()
                 RETURNS TRIGGER AS $$
@@ -826,6 +849,7 @@ public class AsyncInitTable {
                 CREATE INDEX DanmuContentPostTimeIndex ON Danmu(content, post_time);
                 """;
         jdbcTemplate.execute(createDanmuTableConstraint);
+        log.info("Finish Constraint Danmu table");
     }
 
     @Async("taskExecutor")
@@ -898,6 +922,7 @@ public class AsyncInitTable {
                 CREATE INDEX LikeDanmuIdIndex ON LikeDanmu(id);
                 """;
         jdbcTemplate.execute(createLikeDanmuTableConstraint);
+        log.info("Finish Constraint LikeDanmu table");
     }
 
     @Async("taskExecutor")
@@ -1012,6 +1037,7 @@ public class AsyncInitTable {
                 .replace("${TABLE}", table);
         //noinspection SqlSourceToSinkFlow
         jdbcTemplate.execute(setVideoConstrain);
+        log.info("Finish Constraint {}Video table", table);
     }
 
     public long getAvCount() {
