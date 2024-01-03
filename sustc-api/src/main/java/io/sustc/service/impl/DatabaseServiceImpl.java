@@ -64,6 +64,7 @@ public class DatabaseServiceImpl implements DatabaseService {
         jdbcTemplate.execute(config);
     }
 
+    @SuppressWarnings("DuplicatedCode")
     @Override
     public void importData(
             List<DanmuRecord> danmuRecords,
@@ -98,31 +99,61 @@ public class DatabaseServiceImpl implements DatabaseService {
 
         setConfig();
 
-        CompletableFuture<Void> future1 = asyncInitTable.initUserAuthTableAsync(userRecords);
-        CompletableFuture<Void> future2 = future1.thenComposeAsync(aVoid -> CompletableFuture.allOf(
-                asyncInitTable.initUserProfileTableAsync(userRecords),
-                asyncInitTable.initUserFollowTableAsync(userRecords),
-                asyncInitTable.initUserFriendsTableAsync(userRecords)
-        ));
-        CompletableFuture<Void> future3 = future1.thenComposeAsync(aVoid -> CompletableFuture.allOf(
+        CompletableFuture<Void> UserAuth = asyncInitTable.initUserAuthTableAsync(userRecords);
+        CompletableFuture<Void> UserFollow = asyncInitTable.initUserFollowTableAsync(userRecords);
+        CompletableFuture<Void> UserProfile = asyncInitTable.initUserProfileTableAsync(userRecords);
+        CompletableFuture<Void> UserFriends = asyncInitTable.initUserFriendsTableAsync(userRecords);
+        CompletableFuture<Void> Video = UserAuth.thenComposeAsync(aVoid ->
                 asyncInitTable.initVideoTableAsync(videoRecords)
-        ));
-        CompletableFuture<Void> future4 = future3.thenComposeAsync(aVoid -> CompletableFuture.allOf(
-                asyncInitTable.initCountVideoTableAsync(videoRecords, danmuRecords),
-                asyncInitTable.initViewVideoTableAsync(videoRecords),
-                asyncInitTable.initLikeVideoTableAsync(videoRecords),
-                asyncInitTable.initFavVideoTableAsync(videoRecords),
-                asyncInitTable.initCoinVideoTableAsync(videoRecords)
-        ));
-        CompletableFuture<Void> future5 = future3.thenComposeAsync(aVoid -> CompletableFuture.allOf(
-                asyncInitTable.initDanmuTableAsync(danmuRecords)
-        ));
-        CompletableFuture<Void> future6 = future5.thenComposeAsync(aVoid ->
-                asyncInitTable.initLikeDanmuTableAsync(danmuRecords)
         );
-        future2.join();
-        future4.join();
-        future6.join();
+        CompletableFuture<Void> Danmu = asyncInitTable.initDanmuTableAsync(danmuRecords);
+        CompletableFuture<Void> DanmuConstraint = CompletableFuture.allOf(Danmu, Video).thenRunAsync(
+                asyncInitTable::createDanmuConstraintAsync
+        );
+        CompletableFuture<Void> LikeDanmu = asyncInitTable.initLikeDanmuTableAsync(danmuRecords);
+        CompletableFuture<Void> LikeDanmuConstraint = CompletableFuture.allOf(LikeDanmu, Danmu).thenRunAsync(
+                asyncInitTable::createLikeDanmuConstraintAsync
+        );
+        CompletableFuture<Void> ViewVideo = asyncInitTable.initViewVideoTableAsync(videoRecords);
+        CompletableFuture<Void> LikeVideo = asyncInitTable.initLikeVideoTableAsync(videoRecords);
+        CompletableFuture<Void> FavVideo = asyncInitTable.initFavVideoTableAsync(videoRecords);
+        CompletableFuture<Void> CoinVideo = asyncInitTable.initCoinVideoTableAsync(videoRecords);
+        CompletableFuture<Void> CountVideo = Video.thenComposeAsync(aVoid ->
+                asyncInitTable.initCountVideoTableAsync(videoRecords, danmuRecords)
+        );
+        CompletableFuture<Void> UserFollowConstraint = CompletableFuture.allOf(UserFollow, UserAuth).thenRunAsync(
+                asyncInitTable::createUserFollowConstraintAsync
+        );
+        CompletableFuture<Void> UserProfileConstraint = CompletableFuture.allOf(UserProfile, UserAuth).thenRunAsync(
+                asyncInitTable::createUserProfileConstraintAsync
+        );
+        CompletableFuture<Void> UserFriendsConstraint = CompletableFuture.allOf(UserFriends, UserAuth).thenRunAsync(
+                asyncInitTable::createUserFriendsConstraintAsync
+        );
+        CompletableFuture<Void> ViewVideoConstraint = CompletableFuture.allOf(ViewVideo, Video).thenRunAsync(
+                asyncInitTable::createViewVideoConstraintAsync
+        );
+        CompletableFuture<Void> LikeVideoConstraint = CompletableFuture.allOf(LikeVideo, Video).thenRunAsync(
+                asyncInitTable::createLikeVideoConstraintAsync
+        );
+        CompletableFuture<Void> FavVideoConstraint = CompletableFuture.allOf(FavVideo, Video).thenRunAsync(
+                asyncInitTable::createFavVideoConstraintAsync
+        );
+        CompletableFuture<Void> CoinVideoConstraint = CompletableFuture.allOf(CoinVideo, Video).thenRunAsync(
+                asyncInitTable::createCoinVideoConstraintAsync
+        );
+        CompletableFuture.allOf(
+                CountVideo,
+                UserFollowConstraint,
+                UserProfileConstraint,
+                UserFriendsConstraint,
+                ViewVideoConstraint,
+                LikeVideoConstraint,
+                FavVideoConstraint,
+                CoinVideoConstraint,
+                DanmuConstraint,
+                LikeDanmuConstraint
+        ).join();
 
         createGetHotspotFunction();
 

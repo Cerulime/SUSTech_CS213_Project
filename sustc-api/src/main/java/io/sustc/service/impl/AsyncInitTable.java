@@ -110,6 +110,29 @@ public class AsyncInitTable {
 
     @Async("taskExecutor")
     @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public CompletableFuture<Void> createUserProfileConstraintAsync() {
+        return CompletableFuture.runAsync(this::createUserProfileConstraint);
+    }
+
+    public void createUserProfileConstraint() {
+        String createUserProfileTableConstraint = """
+                ALTER TABLE UserProfile ALTER COLUMN name SET NOT NULL;
+                ALTER TABLE UserProfile ALTER COLUMN level SET NOT NULL;
+                ALTER TABLE UserProfile ALTER COLUMN coin SET NOT NULL;
+                ALTER TABLE UserProfile ALTER COLUMN identity SET NOT NULL;
+                                
+                ALTER TABLE UserProfile ADD PRIMARY KEY (mid);
+                ALTER TABLE UserProfile ADD FOREIGN KEY (mid) REFERENCES UserAuth(mid) ON DELETE CASCADE;
+                ALTER TABLE UserProfile ADD CONSTRAINT UniqueName UNIQUE (name);
+                                
+                CREATE INDEX UserProfileNameIndex ON UserProfile USING HASH (name);
+                CREATE INDEX UserProfileLevelIndex ON UserProfile(level DESC);
+                """;
+        jdbcTemplate.execute(createUserProfileTableConstraint);
+    }
+
+    @Async("taskExecutor")
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public CompletableFuture<Void> initUserProfileTableAsync(List<UserRecord> userRecords) {
         return CompletableFuture.runAsync(() -> initUserProfileTable(userRecords));
     }
@@ -170,21 +193,24 @@ public class AsyncInitTable {
         }
         String copySql = "COPY UserProfile(mid, name, sex, birthday_month, birthday_day, level, coin, sign, identity) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t', NULL '', QUOTE E'\\x07')";
         copyInsertion(copyData.toString(), copySql);
-        String createUserProfileTableConstraint = """
-                ALTER TABLE UserProfile ALTER COLUMN name SET NOT NULL;
-                ALTER TABLE UserProfile ALTER COLUMN level SET NOT NULL;
-                ALTER TABLE UserProfile ALTER COLUMN coin SET NOT NULL;
-                ALTER TABLE UserProfile ALTER COLUMN identity SET NOT NULL;
-                                
-                ALTER TABLE UserProfile ADD PRIMARY KEY (mid);
-                ALTER TABLE UserProfile ADD FOREIGN KEY (mid) REFERENCES UserAuth(mid) ON DELETE CASCADE;
-                ALTER TABLE UserProfile ADD CONSTRAINT UniqueName UNIQUE (name);
-                                
-                CREATE INDEX UserProfileNameIndex ON UserProfile USING HASH (name);
-                CREATE INDEX UserProfileLevelIndex ON UserProfile(level DESC);
-                """;
-        jdbcTemplate.execute(createUserProfileTableConstraint);
         log.info("Finish initializing UserProfile table");
+    }
+
+    @Async("taskExecutor")
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public CompletableFuture<Void> createUserFollowConstraintAsync() {
+        return CompletableFuture.runAsync(this::createUserFollowConstraint);
+    }
+
+    public void createUserFollowConstraint() {
+        String createUserFollowTableConstraint = """
+                ALTER TABLE UserFollow ADD PRIMARY KEY (follower, followee);
+                ALTER TABLE UserFollow ADD FOREIGN KEY (follower) REFERENCES UserAuth(mid) ON DELETE CASCADE;
+                ALTER TABLE UserFollow ADD FOREIGN KEY (followee) REFERENCES UserAuth(mid) ON DELETE CASCADE;
+                                
+                CREATE INDEX UserFolloweeIndex ON UserFollow(followee);
+                """;
+        jdbcTemplate.execute(createUserFollowTableConstraint);
     }
 
     @Async("taskExecutor")
@@ -214,7 +240,7 @@ public class AsyncInitTable {
                 copyData.append(user.getMid()).append('\t')
                         .append(followee).append('\n');
                 count++;
-                if (count >= BIG_BATCH_SIZE * 5) {
+                if (count >= BIG_BATCH_SIZE * 4) {
                     String copyDataSnapshot = copyData.toString();
                     tasks.add(CompletableFuture.runAsync(() -> copyInsertion(copyDataSnapshot, copySql)));
 //                    copyInsertion(copyData.toString(), copySql);
@@ -229,14 +255,6 @@ public class AsyncInitTable {
         }
         log.info(tasks.size() + " tasks in UserFollow table");
         CompletableFuture.allOf(tasks.toArray(new CompletableFuture[0])).join();
-        String createUserFollowTableConstraint = """
-                ALTER TABLE UserFollow ADD PRIMARY KEY (follower, followee);
-                ALTER TABLE UserFollow ADD FOREIGN KEY (follower) REFERENCES UserAuth(mid) ON DELETE CASCADE;
-                ALTER TABLE UserFollow ADD FOREIGN KEY (followee) REFERENCES UserAuth(mid) ON DELETE CASCADE;
-                                
-                CREATE INDEX UserFolloweeIndex ON UserFollow(followee);
-                """;
-        jdbcTemplate.execute(createUserFollowTableConstraint);
         String setTrigger = """
                 CREATE OR REPLACE FUNCTION insert_user_friends() RETURNS TRIGGER AS $$
                 BEGIN
@@ -271,6 +289,21 @@ public class AsyncInitTable {
 
     @Async("taskExecutor")
     @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public CompletableFuture<Void> createUserFriendsConstraintAsync() {
+        return CompletableFuture.runAsync(this::createUserFriendsConstraint);
+    }
+
+    public void createUserFriendsConstraint() {
+        String createUserFriendsTableConstraint = """
+                ALTER TABLE UserFriends ADD PRIMARY KEY (mid, friend);
+                ALTER TABLE UserFriends ADD FOREIGN KEY (mid) REFERENCES UserAuth(mid) ON DELETE CASCADE;
+                ALTER TABLE UserFriends ADD FOREIGN KEY (friend) REFERENCES UserAuth(mid) ON DELETE CASCADE;
+                """;
+        jdbcTemplate.execute(createUserFriendsTableConstraint);
+    }
+
+    @Async("taskExecutor")
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public CompletableFuture<Void> initUserFriendsTableAsync(List<UserRecord> userRecords) {
         return CompletableFuture.runAsync(() -> initUserFriendsTable(userRecords));
     }
@@ -301,12 +334,6 @@ public class AsyncInitTable {
         }).collect(Collectors.joining());
         String copySql = "COPY UserFriends(mid, friend) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t')";
         copyInsertion(copyData, copySql);
-        String createUserFriendsTableConstraint = """
-                ALTER TABLE UserFriends ADD PRIMARY KEY (mid, friend);
-                ALTER TABLE UserFriends ADD FOREIGN KEY (mid) REFERENCES UserAuth(mid) ON DELETE CASCADE;
-                ALTER TABLE UserFriends ADD FOREIGN KEY (friend) REFERENCES UserAuth(mid) ON DELETE CASCADE;
-                """;
-        jdbcTemplate.execute(createUserFriendsTableConstraint);
         log.info("Finish initializing UserFriends table");
     }
 
@@ -505,6 +532,12 @@ public class AsyncInitTable {
 
     @Async("taskExecutor")
     @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public CompletableFuture<Void> createLikeVideoConstraintAsync() {
+        return CompletableFuture.runAsync(() -> setVideoConstraint("Like"));
+    }
+
+    @Async("taskExecutor")
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public CompletableFuture<Void> initLikeVideoTableAsync(List<VideoRecord> VideoRecords) {
         return CompletableFuture.runAsync(() -> initLikeVideoTable(VideoRecords));
     }
@@ -547,9 +580,14 @@ public class AsyncInitTable {
         }
         log.info(tasks.size() + " tasks in LikeVideo table");
         CompletableFuture.allOf(tasks.toArray(new CompletableFuture[0])).join();
-        setVideoConstraint("Like");
         setTriggers("like", "LikeVideo");
         log.info("Finish initializing LikeVideo table");
+    }
+
+    @Async("taskExecutor")
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public CompletableFuture<Void> createCoinVideoConstraintAsync() {
+        return CompletableFuture.runAsync(() -> setVideoConstraint("Coin"));
     }
 
     @Async("taskExecutor")
@@ -596,9 +634,14 @@ public class AsyncInitTable {
         }
         log.info(tasks.size() + " tasks in CoinVideo table");
         CompletableFuture.allOf(tasks.toArray(new CompletableFuture[0])).join();
-        setVideoConstraint("Coin");
         setTriggers("coin", "CoinVideo");
         log.info("Finish initializing CoinVideo table");
+    }
+
+    @Async("taskExecutor")
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public CompletableFuture<Void> createFavVideoConstraintAsync() {
+        return CompletableFuture.runAsync(() -> setVideoConstraint("Fav"));
     }
 
     @Async("taskExecutor")
@@ -645,9 +688,27 @@ public class AsyncInitTable {
         }
         log.info(tasks.size() + " tasks in FavVideo table");
         CompletableFuture.allOf(tasks.toArray(new CompletableFuture[0])).join();
-        setVideoConstraint("Fav");
         setTriggers("fav", "FavVideo");
         log.info("Finish initializing FavVideo table");
+    }
+
+    @Async("taskExecutor")
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public CompletableFuture<Void> createViewVideoConstraintAsync() {
+        return CompletableFuture.runAsync(this::createViewVideoConstraint);
+    }
+
+    public void createViewVideoConstraint() {
+        String createViewVideoTableConstraint = """
+                ALTER TABLE ViewVideo ALTER COLUMN view_time SET NOT NULL;
+                                
+                ALTER TABLE ViewVideo ADD PRIMARY KEY (mid, bv);
+                ALTER TABLE ViewVideo ADD FOREIGN KEY (mid) REFERENCES UserAuth(mid) ON DELETE CASCADE;
+                ALTER TABLE ViewVideo ADD FOREIGN KEY (bv) REFERENCES Video(bv) ON DELETE CASCADE;
+                                
+                CREATE INDEX ViewVideoBvIndex ON ViewVideo(bv);
+                """;
+        jdbcTemplate.execute(createViewVideoTableConstraint);
     }
 
     @Async("taskExecutor")
@@ -698,16 +759,6 @@ public class AsyncInitTable {
         }
         log.info(tasks.size() + " tasks in ViewVideo table");
         CompletableFuture.allOf(tasks.toArray(new CompletableFuture[0])).join();
-        String createViewVideoTableConstraint = """
-                ALTER TABLE ViewVideo ALTER COLUMN view_time SET NOT NULL;
-                                
-                ALTER TABLE ViewVideo ADD PRIMARY KEY (mid, bv);
-                ALTER TABLE ViewVideo ADD FOREIGN KEY (mid) REFERENCES UserAuth(mid) ON DELETE CASCADE;
-                ALTER TABLE ViewVideo ADD FOREIGN KEY (bv) REFERENCES Video(bv) ON DELETE CASCADE;
-                                
-                CREATE INDEX ViewVideoBvIndex ON ViewVideo(bv);
-                """;
-        jdbcTemplate.execute(createViewVideoTableConstraint);
         String setTriggers = """
                 CREATE OR REPLACE FUNCTION increase_view_count()
                 RETURNS TRIGGER AS $$
@@ -749,6 +800,32 @@ public class AsyncInitTable {
                 """;
 //        jdbcTemplate.execute(setTriggers);
         log.info("Finish initializing ViewVideo table");
+    }
+
+    @Async("taskExecutor")
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public CompletableFuture<Void> createDanmuConstraintAsync() {
+        return CompletableFuture.runAsync(this::createDanmuConstraint);
+    }
+
+    public void createDanmuConstraint() {
+        String createDanmuTableConstraint = """
+                SELECT setval(pg_get_serial_sequence('Danmu', 'id'), (SELECT MAX(id) FROM Danmu));
+                                
+                ALTER TABLE Danmu ALTER COLUMN bv SET NOT NULL;
+                ALTER TABLE Danmu ALTER COLUMN mid SET NOT NULL;
+                ALTER TABLE Danmu ALTER COLUMN dis_time SET NOT NULL;
+                ALTER TABLE Danmu ALTER COLUMN content SET NOT NULL;
+                ALTER TABLE Danmu ALTER COLUMN post_time SET NOT NULL;
+                                
+                ALTER TABLE Danmu ADD PRIMARY KEY (id);
+                ALTER TABLE Danmu ADD FOREIGN KEY (bv) REFERENCES Video(bv) ON DELETE CASCADE;
+                ALTER TABLE Danmu ADD FOREIGN KEY (mid) REFERENCES UserAuth(mid) ON DELETE CASCADE;
+                                
+                CREATE INDEX DanmuBvDisTimeIndex ON Danmu(bv, dis_time);
+                CREATE INDEX DanmuContentPostTimeIndex ON Danmu(content, post_time);
+                """;
+        jdbcTemplate.execute(createDanmuTableConstraint);
     }
 
     @Async("taskExecutor")
@@ -802,25 +879,25 @@ public class AsyncInitTable {
         }
         log.info(tasks.size() + " tasks in Danmu table");
         CompletableFuture.allOf(tasks.toArray(new CompletableFuture[0])).join();
-        String createDanmuTableConstraint = """
-                SELECT setval(pg_get_serial_sequence('Danmu', 'id'), (SELECT MAX(id) FROM Danmu));
-                                
-                ALTER TABLE Danmu ALTER COLUMN bv SET NOT NULL;
-                ALTER TABLE Danmu ALTER COLUMN mid SET NOT NULL;
-                ALTER TABLE Danmu ALTER COLUMN dis_time SET NOT NULL;
-                ALTER TABLE Danmu ALTER COLUMN content SET NOT NULL;
-                ALTER TABLE Danmu ALTER COLUMN post_time SET NOT NULL;
-                                
-                ALTER TABLE Danmu ADD PRIMARY KEY (id);
-                ALTER TABLE Danmu ADD FOREIGN KEY (bv) REFERENCES Video(bv) ON DELETE CASCADE;
-                ALTER TABLE Danmu ADD FOREIGN KEY (mid) REFERENCES UserAuth(mid) ON DELETE CASCADE;
-                                
-                CREATE INDEX DanmuBvDisTimeIndex ON Danmu(bv, dis_time);
-                CREATE INDEX DanmuContentPostTimeIndex ON Danmu(content, post_time);
-                """;
-        jdbcTemplate.execute(createDanmuTableConstraint);
         setTriggers("danmu", "Danmu");
         log.info("Finish initializing Danmu table");
+    }
+
+    @Async("taskExecutor")
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public CompletableFuture<Void> createLikeDanmuConstraintAsync() {
+        return CompletableFuture.runAsync(this::createLikeDanmuConstraint);
+    }
+
+    public void createLikeDanmuConstraint() {
+        String createLikeDanmuTableConstraint = """
+                ALTER TABLE LikeDanmu ADD PRIMARY KEY (mid, id);
+                ALTER TABLE LikeDanmu ADD FOREIGN KEY (mid) REFERENCES UserAuth(mid) ON DELETE CASCADE;
+                ALTER TABLE LikeDanmu ADD FOREIGN KEY (id) REFERENCES Danmu(id) ON DELETE CASCADE;
+                                
+                CREATE INDEX LikeDanmuIdIndex ON LikeDanmu(id);
+                """;
+        jdbcTemplate.execute(createLikeDanmuTableConstraint);
     }
 
     @Async("taskExecutor")
@@ -867,14 +944,6 @@ public class AsyncInitTable {
         }
         log.info(tasks.size() + " tasks in LikeDanmu table");
         CompletableFuture.allOf(tasks.toArray(new CompletableFuture[0])).join();
-        String createLikeDanmuTableConstraint = """
-                ALTER TABLE LikeDanmu ADD PRIMARY KEY (mid, id);
-                ALTER TABLE LikeDanmu ADD FOREIGN KEY (mid) REFERENCES UserAuth(mid) ON DELETE CASCADE;
-                ALTER TABLE LikeDanmu ADD FOREIGN KEY (id) REFERENCES Danmu(id) ON DELETE CASCADE;
-                                
-                CREATE INDEX LikeDanmuIdIndex ON LikeDanmu(id);
-                """;
-        jdbcTemplate.execute(createLikeDanmuTableConstraint);
         log.info("Finish initializing LikeDanmu table");
     }
 
